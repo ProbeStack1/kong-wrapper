@@ -39,7 +39,7 @@ export const consumersEndpoints = {
   },
 
   updateConsumerPatch: async (request: Request) => {
-    const response = await apiClient.patch(
+    const response = await apiClient.put(
       `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}`,
       getBody(request, {
         custom_id: "updated-external-id",

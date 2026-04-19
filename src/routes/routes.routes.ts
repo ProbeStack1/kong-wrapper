@@ -22,7 +22,7 @@ export function createRoutesRouter(): Router {
   router.get("/v2/control-planes/:control_plane_id/core-entities/routes/:route_id", controller.handle(routesEndpoints.getRouteByIdOrName));
 
   // Postman: Update Route (PATCH)
-  router.patch("/v2/control-planes/:control_plane_id/core-entities/routes/:route_id", controller.handle(routesEndpoints.updateRoutePatch));
+  router.put("/v2/control-planes/:control_plane_id/core-entities/routes/:route_id", controller.handle(routesEndpoints.updateRoutePatch));
 
   // Postman: Delete Route
   router.delete("/v2/control-planes/:control_plane_id/core-entities/routes/:route_id", controller.handle(routesEndpoints.deleteRoute));

@@ -66,7 +66,7 @@ export const routesEndpoints = {
   },
 
   updateRoutePatch: async (request: Request) => {
-    const response = await apiClient.patch(
+    const response = await apiClient.put(
       `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/routes/${request.params.route_id}`,
       getBody(request, {
         methods: ["GET", "HEAD"],

@@ -19,7 +19,7 @@ export function createConsumersRouter(): Router {
   router.get("/v2/control-planes/:control_plane_id/core-entities/consumers/:consumer_id", controller.handle(consumersEndpoints.getConsumer));
 
   // Postman: Update Consumer (PATCH)
-  router.patch("/v2/control-planes/:control_plane_id/core-entities/consumers/:consumer_id", controller.handle(consumersEndpoints.updateConsumerPatch));
+  router.put("/v2/control-planes/:control_plane_id/core-entities/consumers/:consumer_id", controller.handle(consumersEndpoints.updateConsumerPatch));
 
   // Postman: Delete Consumer
   router.delete("/v2/control-planes/:control_plane_id/core-entities/consumers/:consumer_id", controller.handle(consumersEndpoints.deleteConsumer));

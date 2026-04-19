@@ -23,6 +23,20 @@ export const consumerCredentialsEndpoints = {
     return response.data;
   },
 
+  updateJwtCredential: async (request: Request) => {
+    const response = await apiClient.put(
+      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/jwt/${request.params.jwt_credential_id}`,
+      getBody(request, {
+        key: "my-jwt-issuer",
+        secret: "my-jwt-secret-value",
+        algorithm: "HS256",
+        rsa_public_key: null,
+      }),
+      { params: request.query },
+    );
+    return response.data;
+  },
+
   listJwtCredentials: async (request: Request) => {
     const response = await apiClient.get(
       `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/jwt`,
@@ -42,6 +56,17 @@ export const consumerCredentialsEndpoints = {
   createKeyAuthCredential: async (request: Request) => {
     const response = await apiClient.post(
       `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/key-auth`,
+      getBody(request, {
+        key: "my-api-key-12345",
+      }),
+      { params: request.query },
+    );
+    return response.data;
+  },
+  
+  updateKeyAuthCredential: async (request: Request) => {
+    const response = await apiClient.put(
+      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/key-auth/${request.params.keyauth_credential_id}`,
       getBody(request, {
         key: "my-api-key-12345",
       }),
@@ -78,6 +103,26 @@ export const consumerCredentialsEndpoints = {
     return response.data;
   },
 
+  updateBasicAuthCredential: async (request: Request) => {
+    const response = await apiClient.put(
+      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/basic-auth/${request.params.basicauth_credential_id}`,
+      getBody(request, {
+        username: "my-user",
+        password: "my-password-123",
+      }),
+      { params: request.query },
+    );
+    return response.data;
+  },
+
+  listBasicAuthCredentials: async (request: Request) => {
+    const response = await apiClient.get(
+      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/basic-auth`,
+      { params: request.query },
+    );
+    return response.data;
+  },
+
   createHmacAuthCredential: async (request: Request) => {
     const response = await apiClient.post(
       `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/hmac-auth`,
@@ -85,6 +130,26 @@ export const consumerCredentialsEndpoints = {
         username: "hmac-user",
         secret: "my-hmac-secret",
       }),
+      { params: request.query },
+    );
+    return response.data;
+  },
+
+  updateHmacAuthCredential: async (request: Request) => {
+    const response = await apiClient.put(
+      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/hmac-auth/${request.params.hmacauth_credential_id}`,
+      getBody(request, {
+        username: "hmac-user",
+        secret: "my-hmac-secret",
+      }),
+      { params: request.query },
+    );
+    return response.data;
+  },
+
+  listHmacAuthCredentials: async (request: Request) => {
+    const response = await apiClient.get(
+      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/hmac-auth`,
       { params: request.query },
     );
     return response.data;
@@ -104,6 +169,16 @@ export const consumerCredentialsEndpoints = {
   listAclGroups: async (request: Request) => {
     const response = await apiClient.get(
       `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/acls`,
+      { params: request.query },
+    );
+    return response.data;
+  },
+  updateAclGroup: async (request: Request) => {
+    const response = await apiClient.put(
+      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/acls/${request.params.acl_group_id}`,
+      getBody(request, {
+        group: "admin-group",
+      }),
       { params: request.query },
     );
     return response.data;

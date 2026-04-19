@@ -18,6 +18,9 @@ export function createUpstreamsTargetsRouter(): Router {
   // Postman: Delete Upstream
   router.delete("/v2/control-planes/:control_plane_id/core-entities/upstreams/:upstream_id", controller.handle(upstreamsTargetsEndpoints.deleteUpstream));
 
+  // Postman: Update Upstream
+  router.put("/v2/control-planes/:control_plane_id/core-entities/upstreams/:upstream_id", controller.handle(upstreamsTargetsEndpoints.updateUpstream));
+
   // Postman: Create Target
   router.post("/v2/control-planes/:control_plane_id/core-entities/upstreams/:upstream_id/targets", controller.handle(upstreamsTargetsEndpoints.createTarget));
 
@@ -26,6 +29,9 @@ export function createUpstreamsTargetsRouter(): Router {
 
   // Postman: Delete Target
   router.delete("/v2/control-planes/:control_plane_id/core-entities/upstreams/:upstream_id/targets/:target_id", controller.handle(upstreamsTargetsEndpoints.deleteTarget));
+
+  // Postman: Update Target
+  router.put("/v2/control-planes/:control_plane_id/core-entities/upstreams/:upstream_id/targets/:target_id", controller.handle(upstreamsTargetsEndpoints.updateTarget));
 
   return router;
 }
