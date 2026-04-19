@@ -3,7 +3,7 @@ name: PROD GKE Deploy - Kong Wrapper Service
 on:
   push:
     branches:
-      - gke_mongo_db
+      - main
   workflow_dispatch:
 
 env:
@@ -19,7 +19,7 @@ env:
 jobs:
   deploy:
 
-    if: github.ref == 'refs/heads/gke_mongo_db'
+    if: github.ref == 'refs/heads/main'
 
     runs-on: ubuntu-latest
 
