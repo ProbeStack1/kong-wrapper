@@ -19,7 +19,15 @@ RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
 
-ENV KONNECT_BASE_URL=https://in.api.konghq.com \
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOST=0.0.0.0 \
+    CONTEXT_PATH=/kong-wrapper \
+    CORS_ORIGIN=http://localhost:5173,https://probestack.io \
+    REQUEST_TIMEOUT_MS=10000 \
+    AXIOS_RETRY_COUNT=2 \
+    AXIOS_RETRY_DELAY_MS=300 \
+    KONNECT_BASE_URL=https://in.api.konghq.com \
     KONNECT_PAT=kpat_2d2rITsYZEege6CyD989DcS6nLTGDiRe3U2VSZZBfEzAQ7VvR
 
 EXPOSE 3000
