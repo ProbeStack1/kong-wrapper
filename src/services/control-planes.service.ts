@@ -1,7 +1,6 @@
 import type { Request } from "express";
 import { apiClient } from "../client/api-client";
-
-const getBaseUrl = () => process.env.KONNECT_BASE_URL || "https://in.api.konghq.com";
+import { getKonnectBaseUrl, listControlPlanesAcrossRegions } from "./konnect-base-url.service";
 
 const getBody = (request: Request, fallback: unknown) => {
   const body = request.body as Record<string, unknown> | undefined;
@@ -10,22 +9,21 @@ const getBody = (request: Request, fallback: unknown) => {
 
 export const controlPlanesEndpoints = {
   listAllControlPlanes: async (request: Request) => {
-    const response = await apiClient.get(`${getBaseUrl()}/v2/control-planes`, {
-      params: request.query,
-    });
-    return response.data;
+    return listControlPlanesAcrossRegions(request);
   },
 
   getControlPlaneById: async (request: Request) => {
-    const response = await apiClient.get(`${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}`, {
+    const baseUrl = await getKonnectBaseUrl(request);
+    const response = await apiClient.get(`${baseUrl}/v2/control-planes/${request.params.control_plane_id}`, {
       params: request.query,
     });
     return response.data;
   },
 
   createControlPlane: async (request: Request) => {
+    const baseUrl = await getKonnectBaseUrl(request);
     const response = await apiClient.post(
-      `${getBaseUrl()}/v2/control-planes`,
+      `${baseUrl}/v2/control-planes`,
       getBody(request, {
         name: "my-new-control-plane",
         description: "A new control plane for testing",
@@ -42,8 +40,9 @@ export const controlPlanesEndpoints = {
   },
 
   updateControlPlane: async (request: Request) => {
+    const baseUrl = await getKonnectBaseUrl(request);
     const response = await apiClient.patch(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}`,
+      `${baseUrl}/v2/control-planes/${request.params.control_plane_id}`,
       getBody(request, {
         description: "Updated description",
         labels: {
@@ -56,7 +55,8 @@ export const controlPlanesEndpoints = {
   },
 
   deleteControlPlane: async (request: Request) => {
-    const response = await apiClient.delete(`${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}`, {
+    const baseUrl = await getKonnectBaseUrl(request);
+    const response = await apiClient.delete(`${baseUrl}/v2/control-planes/${request.params.control_plane_id}`, {
       params: request.query,
     });
     return response.data ?? { success: true };

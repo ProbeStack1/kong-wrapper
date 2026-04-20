@@ -1,7 +1,6 @@
 import type { Request } from "express";
 import { apiClient } from "../client/api-client";
-
-const getBaseUrl = () => process.env.KONNECT_BASE_URL || "https://in.api.konghq.com";
+import { getKonnectBaseUrl } from "./konnect-base-url.service";
 
 const getBody = (request: Request, fallback: unknown) => {
   const body = request.body as Record<string, unknown> | undefined;
@@ -11,7 +10,7 @@ const getBody = (request: Request, fallback: unknown) => {
 export const upstreamsTargetsEndpoints = {
   createUpstreamWithHealthchecks: async (request: Request) => {
     const response = await apiClient.post(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams`,
       getBody(request, {
         name: "demo-upstream",
         algorithm: "round-robin",
@@ -61,7 +60,7 @@ export const upstreamsTargetsEndpoints = {
 
   updateUpstream: async (request: Request) => {
     const response = await apiClient.put(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}`,
       getBody(request, {
         name: "demo-upstream",
         algorithm: "round-robin",
@@ -111,7 +110,7 @@ export const upstreamsTargetsEndpoints = {
 
   listUpstreams: async (request: Request) => {
     const response = await apiClient.get(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams`,
       { params: request.query },
     );
     return response.data;
@@ -119,7 +118,7 @@ export const upstreamsTargetsEndpoints = {
 
   deleteUpstream: async (request: Request) => {
     const response = await apiClient.delete(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}`,
       { params: request.query },
     );
     return response.data ?? { success: true };
@@ -127,7 +126,7 @@ export const upstreamsTargetsEndpoints = {
 
   createTarget: async (request: Request) => {
     const response = await apiClient.post(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}/targets`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}/targets`,
       getBody(request, {
         target: "10.0.0.1:8080",
         weight: 100,
@@ -140,7 +139,7 @@ export const upstreamsTargetsEndpoints = {
 
   updateTarget: async (request: Request) => {
     const response = await apiClient.put(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}/targets/${request.params.target_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}/targets/${request.params.target_id}`,
       getBody(request, {
         target: "10.0.0.1:8080",
         weight: 100,
@@ -153,7 +152,7 @@ export const upstreamsTargetsEndpoints = {
 
   listTargets: async (request: Request) => {
     const response = await apiClient.get(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}/targets`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}/targets`,
       { params: request.query },
     );
     return response.data;
@@ -161,7 +160,7 @@ export const upstreamsTargetsEndpoints = {
 
   deleteTarget: async (request: Request) => {
     const response = await apiClient.delete(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}/targets/${request.params.target_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}/targets/${request.params.target_id}`,
       { params: request.query },
     );
     return response.data ?? { success: true };

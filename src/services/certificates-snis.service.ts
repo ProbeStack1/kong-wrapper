@@ -1,7 +1,6 @@
 import type { Request } from "express";
 import { apiClient } from "../client/api-client";
-
-const getBaseUrl = () => process.env.KONNECT_BASE_URL || "https://in.api.konghq.com";
+import { getKonnectBaseUrl } from "./konnect-base-url.service";
 
 const getBody = (request: Request, fallback: unknown) => {
   const body = request.body as Record<string, unknown> | undefined;
@@ -11,7 +10,7 @@ const getBody = (request: Request, fallback: unknown) => {
 export const certificatesSnisEndpoints = {
   createCertificate: async (request: Request) => {
     const response = await apiClient.post(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/certificates`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/certificates`,
       getBody(request, {
         cert: "-----BEGIN CERTIFICATE-----\n...your-cert...\n-----END CERTIFICATE-----",
         key: "-----BEGIN PRIVATE KEY-----\n...your-key...\n-----END PRIVATE KEY-----",
@@ -25,7 +24,7 @@ export const certificatesSnisEndpoints = {
 
   listCertificates: async (request: Request) => {
     const response = await apiClient.get(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/certificates`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/certificates`,
       { params: request.query },
     );
     return response.data;
@@ -33,7 +32,7 @@ export const certificatesSnisEndpoints = {
 
   createSni: async (request: Request) => {
     const response = await apiClient.post(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/snis`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/snis`,
       getBody(request, {
         name: "api.example.com",
         certificate: { id: process.env.CERTIFICATE_ID || "{{certificate_id}}" },
@@ -45,7 +44,7 @@ export const certificatesSnisEndpoints = {
 
   listSnis: async (request: Request) => {
     const response = await apiClient.get(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/snis`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/snis`,
       { params: request.query },
     );
     return response.data;
@@ -53,7 +52,7 @@ export const certificatesSnisEndpoints = {
 
   createCaCertificate: async (request: Request) => {
     const response = await apiClient.post(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/ca_certificates`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/ca_certificates`,
       getBody(request, {
         cert: "-----BEGIN CERTIFICATE-----\n...your-ca-cert...\n-----END CERTIFICATE-----",
         cert_digest: null,

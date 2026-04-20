@@ -26,6 +26,7 @@ ENV NODE_ENV=production \
     CORS_ORIGIN=http://localhost:5173,https://probestack.io \
     REQUEST_TIMEOUT_MS=10000 \
     AXIOS_RETRY_COUNT=2 \
+    KONNECT_REGION=in \
     AXIOS_RETRY_DELAY_MS=300 \
     KONNECT_BASE_URL=https://in.api.konghq.com \
     KONNECT_PAT=kpat_2d2rITsYZEege6CyD989DcS6nLTGDiRe3U2VSZZBfEzAQ7VvR

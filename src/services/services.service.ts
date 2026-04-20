@@ -1,7 +1,6 @@
 import type { Request } from "express";
 import { apiClient } from "../client/api-client";
-
-const getBaseUrl = () => process.env.KONNECT_BASE_URL || "https://in.api.konghq.com";
+import { getKonnectBaseUrl } from "./konnect-base-url.service";
 
 const getBody = (request: Request, fallback: unknown) => {
   const body = request.body as Record<string, unknown> | undefined;
@@ -11,7 +10,7 @@ const getBody = (request: Request, fallback: unknown) => {
 export const servicesEndpoints = {
   createServiceAllParams: async (request: Request) => {
     const response = await apiClient.post(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/services`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services`,
       getBody(request, {
         name: "petstore-service",
         url: "https://petstore3.swagger.io/api/v3",
@@ -33,7 +32,7 @@ export const servicesEndpoints = {
 
   listAllServices: async (request: Request) => {
     const response = await apiClient.get(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/services`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services`,
       {
         params: { size: 100, ...(request.query as Record<string, unknown>) },
       },
@@ -43,7 +42,7 @@ export const servicesEndpoints = {
 
   getServiceByIdOrName: async (request: Request) => {
     const response = await apiClient.get(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}`,
       { params: request.query },
     );
     return response.data;
@@ -51,7 +50,7 @@ export const servicesEndpoints = {
 
   updateServicePatch: async (request: Request) => {
     const response = await apiClient.patch(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}`,
       getBody(request, {
         retries: 3,
         connect_timeout: 30000,
@@ -66,7 +65,7 @@ export const servicesEndpoints = {
 
   upsertServicePut: async (request: Request) => {
     const response = await apiClient.put(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}`,
       getBody(request, {
         name: "demo-service",
         protocol: "https",
@@ -87,7 +86,7 @@ export const servicesEndpoints = {
 
   deleteService: async (request: Request) => {
     const response = await apiClient.delete(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}`,
       { params: request.query },
     );
     return response.data ?? { success: true };
@@ -95,7 +94,7 @@ export const servicesEndpoints = {
 
   listRoutesForService: async (request: Request) => {
     const response = await apiClient.get(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}/routes`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}/routes`,
       { params: request.query },
     );
     return response.data;
@@ -103,7 +102,7 @@ export const servicesEndpoints = {
 
   listPluginsForService: async (request: Request) => {
     const response = await apiClient.get(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}/plugins`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}/plugins`,
       { params: request.query },
     );
     return response.data;

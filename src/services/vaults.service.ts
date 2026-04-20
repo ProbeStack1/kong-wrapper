@@ -1,7 +1,6 @@
 import type { Request } from "express";
 import { apiClient } from "../client/api-client";
-
-const getBaseUrl = () => process.env.KONNECT_BASE_URL || "https://in.api.konghq.com";
+import { getKonnectBaseUrl } from "./konnect-base-url.service";
 
 const getBody = (request: Request, fallback: unknown) => {
   const body = request.body as Record<string, unknown> | undefined;
@@ -11,7 +10,7 @@ const getBody = (request: Request, fallback: unknown) => {
 export const vaultsEndpoints = {
   createVault: async (request: Request) => {
     const response = await apiClient.post(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/vaults`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/vaults`,
       getBody(request, {
         prefix: "my-vault",
         name: "env",
@@ -28,7 +27,7 @@ export const vaultsEndpoints = {
 
   listVaults: async (request: Request) => {
     const response = await apiClient.get(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/vaults`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/vaults`,
       { params: request.query },
     );
     return response.data;
@@ -36,7 +35,7 @@ export const vaultsEndpoints = {
 
   deleteVault: async (request: Request) => {
     const response = await apiClient.delete(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/vaults/${request.params.vault_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/vaults/${request.params.vault_id}`,
       { params: request.query },
     );
     return response.data ?? { success: true };

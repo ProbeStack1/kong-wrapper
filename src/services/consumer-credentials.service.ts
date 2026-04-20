@@ -1,7 +1,6 @@
 import type { Request } from "express";
 import { apiClient } from "../client/api-client";
-
-const getBaseUrl = () => process.env.KONNECT_BASE_URL || "https://in.api.konghq.com";
+import { getKonnectBaseUrl } from "./konnect-base-url.service";
 
 const getBody = (request: Request, fallback: unknown) => {
   const body = request.body as Record<string, unknown> | undefined;
@@ -11,7 +10,7 @@ const getBody = (request: Request, fallback: unknown) => {
 export const consumerCredentialsEndpoints = {
   createJwtCredential: async (request: Request) => {
     const response = await apiClient.post(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/jwt`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/jwt`,
       getBody(request, {
         key: "my-jwt-issuer",
         secret: "my-jwt-secret-value",
@@ -25,7 +24,7 @@ export const consumerCredentialsEndpoints = {
 
   updateJwtCredential: async (request: Request) => {
     const response = await apiClient.put(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/jwt/${request.params.jwt_credential_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/jwt/${request.params.jwt_credential_id}`,
       getBody(request, {
         key: "my-jwt-issuer",
         secret: "my-jwt-secret-value",
@@ -39,7 +38,7 @@ export const consumerCredentialsEndpoints = {
 
   listJwtCredentials: async (request: Request) => {
     const response = await apiClient.get(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/jwt`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/jwt`,
       { params: request.query },
     );
     return response.data;
@@ -47,7 +46,7 @@ export const consumerCredentialsEndpoints = {
 
   deleteJwtCredential: async (request: Request) => {
     const response = await apiClient.delete(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/jwt/${request.params.jwt_credential_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/jwt/${request.params.jwt_credential_id}`,
       { params: request.query },
     );
     return response.data ?? { success: true };
@@ -55,7 +54,7 @@ export const consumerCredentialsEndpoints = {
 
   createKeyAuthCredential: async (request: Request) => {
     const response = await apiClient.post(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/key-auth`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/key-auth`,
       getBody(request, {
         key: "my-api-key-12345",
       }),
@@ -66,7 +65,7 @@ export const consumerCredentialsEndpoints = {
   
   updateKeyAuthCredential: async (request: Request) => {
     const response = await apiClient.put(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/key-auth/${request.params.keyauth_credential_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/key-auth/${request.params.keyauth_credential_id}`,
       getBody(request, {
         key: "my-api-key-12345",
       }),
@@ -77,7 +76,7 @@ export const consumerCredentialsEndpoints = {
 
   listKeyAuthCredentials: async (request: Request) => {
     const response = await apiClient.get(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/key-auth`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/key-auth`,
       { params: request.query },
     );
     return response.data;
@@ -85,7 +84,7 @@ export const consumerCredentialsEndpoints = {
 
   deleteKeyAuthCredential: async (request: Request) => {
     const response = await apiClient.delete(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/key-auth/${request.params.keyauth_credential_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/key-auth/${request.params.keyauth_credential_id}`,
       { params: request.query },
     );
     return response.data ?? { success: true };
@@ -93,7 +92,7 @@ export const consumerCredentialsEndpoints = {
 
   createBasicAuthCredential: async (request: Request) => {
     const response = await apiClient.post(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/basic-auth`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/basic-auth`,
       getBody(request, {
         username: "my-user",
         password: "my-password-123",
@@ -105,7 +104,7 @@ export const consumerCredentialsEndpoints = {
 
   updateBasicAuthCredential: async (request: Request) => {
     const response = await apiClient.put(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/basic-auth/${request.params.basicauth_credential_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/basic-auth/${request.params.basicauth_credential_id}`,
       getBody(request, {
         username: "my-user",
         password: "my-password-123",
@@ -117,7 +116,7 @@ export const consumerCredentialsEndpoints = {
 
   listBasicAuthCredentials: async (request: Request) => {
     const response = await apiClient.get(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/basic-auth`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/basic-auth`,
       { params: request.query },
     );
     return response.data;
@@ -125,7 +124,7 @@ export const consumerCredentialsEndpoints = {
 
   createHmacAuthCredential: async (request: Request) => {
     const response = await apiClient.post(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/hmac-auth`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/hmac-auth`,
       getBody(request, {
         username: "hmac-user",
         secret: "my-hmac-secret",
@@ -137,7 +136,7 @@ export const consumerCredentialsEndpoints = {
 
   updateHmacAuthCredential: async (request: Request) => {
     const response = await apiClient.put(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/hmac-auth/${request.params.hmacauth_credential_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/hmac-auth/${request.params.hmacauth_credential_id}`,
       getBody(request, {
         username: "hmac-user",
         secret: "my-hmac-secret",
@@ -149,7 +148,7 @@ export const consumerCredentialsEndpoints = {
 
   listHmacAuthCredentials: async (request: Request) => {
     const response = await apiClient.get(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/hmac-auth`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/hmac-auth`,
       { params: request.query },
     );
     return response.data;
@@ -157,7 +156,7 @@ export const consumerCredentialsEndpoints = {
 
   createAclGroup: async (request: Request) => {
     const response = await apiClient.post(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/acls`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/acls`,
       getBody(request, {
         group: "admin-group",
       }),
@@ -168,14 +167,14 @@ export const consumerCredentialsEndpoints = {
 
   listAclGroups: async (request: Request) => {
     const response = await apiClient.get(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/acls`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/acls`,
       { params: request.query },
     );
     return response.data;
   },
   updateAclGroup: async (request: Request) => {
     const response = await apiClient.put(
-      `${getBaseUrl()}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/acls/${request.params.acl_group_id}`,
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/consumers/${request.params.consumer_id}/acls/${request.params.acl_group_id}`,
       getBody(request, {
         group: "admin-group",
       }),
