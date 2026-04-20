@@ -51,6 +51,24 @@ function matchesAllowedOrigin(requestOrigin: string, allowedOrigins: string[]): 
   });
 }
 
+function getAllowedRequestHeaders(request: express.Request): string {
+  const defaultHeaders = [
+    "Origin",
+    "X-Requested-With",
+    "Content-Type",
+    "Accept",
+    "Authorization",
+    "X-Partner-Id",
+  ];
+
+  const requestedHeaders = (request.header("Access-Control-Request-Headers") ?? "")
+    .split(",")
+    .map((header) => header.trim())
+    .filter(Boolean);
+
+  return [...new Set([...defaultHeaders, ...requestedHeaders])].join(", ");
+}
+
 export function buildApp(): Express {
   const app = express();
   const contextPath = normalizeContextPath(process.env.CONTEXT_PATH);
@@ -65,7 +83,7 @@ export function buildApp(): Express {
       response.header("Vary", "Origin");
     }
 
-    response.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    response.header("Access-Control-Allow-Headers", getAllowedRequestHeaders(request));
     response.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
 
     if (request.method === "OPTIONS") {
