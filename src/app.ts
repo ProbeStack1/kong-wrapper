@@ -32,6 +32,25 @@ function getAllowedOrigins(): string[] {
     .filter(Boolean);
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function matchesAllowedOrigin(requestOrigin: string, allowedOrigins: string[]): boolean {
+  return allowedOrigins.some((allowedOrigin) => {
+    if (allowedOrigin === requestOrigin) {
+      return true;
+    }
+
+    if (!allowedOrigin.includes("*")) {
+      return false;
+    }
+
+    const pattern = `^${escapeRegex(allowedOrigin).replace(/\\\*/g, ".*")}$`;
+    return new RegExp(pattern).test(requestOrigin);
+  });
+}
+
 export function buildApp(): Express {
   const app = express();
   const contextPath = normalizeContextPath(process.env.CONTEXT_PATH);
@@ -41,7 +60,7 @@ export function buildApp(): Express {
   app.use((request, response, next) => {
     const requestOrigin = request.headers.origin;
 
-    if (requestOrigin && allowedOrigins.includes(requestOrigin)) {
+    if (requestOrigin && matchesAllowedOrigin(requestOrigin, allowedOrigins)) {
       response.header("Access-Control-Allow-Origin", requestOrigin);
       response.header("Vary", "Origin");
     }
