@@ -23,6 +23,9 @@ export function createCertificatesSnisRouter(): Router {
 
   // Postman: Create CA Certificate
   router.post("/v2/control-planes/:control_plane_id/core-entities/ca_certificates", controller.handle(certificatesSnisEndpoints.createCaCertificate));
+  
+  // Postman: List CA Certificates
+  router.get("/v2/control-planes/:control_plane_id/core-entities/ca_certificates", controller.handle(certificatesSnisEndpoints.listCaCertificates));
 
   return router;
 }

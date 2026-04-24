@@ -62,4 +62,11 @@ export const certificatesSnisEndpoints = {
     );
     return response.data;
   },
+  listCaCertificates: async (request: Request) => {
+    const response = await apiClient.get(
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/ca_certificates`,
+      { params: request.query },
+    );
+    return response.data;
+  },
 };
