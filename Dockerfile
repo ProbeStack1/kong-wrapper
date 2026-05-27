@@ -19,10 +19,13 @@ RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
 
+RUN mkdir -p /app/tmp/kong-bundles && chmod -R 777 /app/tmp
+
 ENV NODE_ENV=production \
     PORT=3000 \
     HOST=0.0.0.0 \
     CONTEXT_PATH=/kong-wrapper \
+    KONG_BUNDLE_TEMP_DIR=/app/tmp/kong-bundles \
     CORS_ORIGIN=http://localhost:5173,http://localhost:5174,http://localhost:3000,https://probestack.io,https://prod.probestack.io,https://*.probestack.io \
     REQUEST_TIMEOUT_MS=10000 \
     AXIOS_RETRY_COUNT=2 \
