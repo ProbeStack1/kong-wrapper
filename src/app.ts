@@ -10,7 +10,9 @@ import { createUpstreamsTargetsRouter } from "./routes/upstreams-targets.routes"
 import { createCertificatesSnisRouter } from "./routes/certificates-snis.routes";
 import { createVaultsRouter } from "./routes/vaults.routes";
 import { createProxyTestsRouter } from "./routes/proxy-tests.routes";
+import { createKongBundlesRouter } from "./routes/kong-bundles.routes";
 import { getMongoHealth } from "./db/mongoose";
+import { HttpError } from "./errors/http-error";
 
 function normalizeContextPath(value: string | undefined): string {
   if (!value || value === "/") {
@@ -122,6 +124,7 @@ export function buildApp(): Express {
   api.use(createCertificatesSnisRouter());
   api.use(createVaultsRouter());
   api.use(createProxyTestsRouter());
+  api.use(createKongBundlesRouter());
 
   app.use(contextPath || "/", api);
 
@@ -135,9 +138,11 @@ export function buildApp(): Express {
   });
 
   app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
-    response.status(500).json({
+    const statusCode = error instanceof HttpError ? error.statusCode : 500;
+
+    response.status(statusCode).json({
       error: {
-        statusCode: 500,
+        statusCode,
         message: error instanceof Error ? error.message : "Internal server error",
       },
     });
