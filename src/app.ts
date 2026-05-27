@@ -10,6 +10,7 @@ import { createUpstreamsTargetsRouter } from "./routes/upstreams-targets.routes"
 import { createCertificatesSnisRouter } from "./routes/certificates-snis.routes";
 import { createVaultsRouter } from "./routes/vaults.routes";
 import { createProxyTestsRouter } from "./routes/proxy-tests.routes";
+import { getMongoHealth } from "./db/mongoose";
 
 function normalizeContextPath(value: string | undefined): string {
   if (!value || value === "/") {
@@ -97,10 +98,17 @@ export function buildApp(): Express {
   app.use(express.json({ limit: "2mb" }));
   app.use(express.urlencoded({ extended: true }));
 
-  api.get("/health", (_request, response) => {
-    response.status(200).json({
-      status: "UP",
+  api.get("/health", async (_request, response) => {
+    const mongo = await getMongoHealth();
+    const status = mongo.status === "DOWN" ? (mongo.required ? "DOWN" : "DEGRADED") : "UP";
+    const httpStatus = status === "DOWN" ? 503 : 200;
+
+    response.status(httpStatus).json({
+      status,
       contextPath,
+      checks: {
+        mongo,
+      },
     });
   });
 

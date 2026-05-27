@@ -1,15 +1,18 @@
 import type { Request } from "express";
 import { apiClient } from "../client/api-client";
 import { getKonnectBaseUrl, listControlPlanesAcrossRegions } from "./konnect-base-url.service";
-
-const getBody = (request: Request, fallback: unknown) => {
-  const body = request.body as Record<string, unknown> | undefined;
-  return body && Object.keys(body).length > 0 ? request.body : fallback;
-};
+import { getKongRequestBody } from "./request-metadata.service";
+import {
+  enrichListResponse,
+  recordResourceCreated,
+  recordResourceDeleted,
+  recordResourceUpdated,
+} from "./resource-tracking.service";
 
 export const controlPlanesEndpoints = {
   listAllControlPlanes: async (request: Request) => {
-    return listControlPlanesAcrossRegions(request);
+    const response = await listControlPlanesAcrossRegions(request);
+    return enrichListResponse(request, "control_plane", response);
   },
 
   getControlPlaneById: async (request: Request) => {
@@ -24,7 +27,7 @@ export const controlPlanesEndpoints = {
     const baseUrl = await getKonnectBaseUrl(request);
     const response = await apiClient.post(
       `${baseUrl}/v2/control-planes`,
-      getBody(request, {
+      getKongRequestBody(request, {
         name: "my-new-control-plane",
         description: "A new control plane for testing",
         cluster_type: "CLUSTER_TYPE_CONTROL_PLANE",
@@ -36,6 +39,7 @@ export const controlPlanesEndpoints = {
       }),
       { params: request.query },
     );
+    await recordResourceCreated(request, "control_plane", { resource: response.data });
     return response.data;
   },
 
@@ -43,7 +47,7 @@ export const controlPlanesEndpoints = {
     const baseUrl = await getKonnectBaseUrl(request);
     const response = await apiClient.patch(
       `${baseUrl}/v2/control-planes/${request.params.control_plane_id}`,
-      getBody(request, {
+      getKongRequestBody(request, {
         description: "Updated description",
         labels: {
           env: "staging",
@@ -51,6 +55,7 @@ export const controlPlanesEndpoints = {
       }),
       { params: request.query },
     );
+    await recordResourceUpdated(request, "control_plane", { resource: response.data, resourceId: request.params.control_plane_id });
     return response.data;
   },
 
@@ -59,6 +64,7 @@ export const controlPlanesEndpoints = {
     const response = await apiClient.delete(`${baseUrl}/v2/control-planes/${request.params.control_plane_id}`, {
       params: request.query,
     });
+    await recordResourceDeleted(request, "control_plane", { resourceId: request.params.control_plane_id });
     return response.data ?? { success: true };
   },
 };

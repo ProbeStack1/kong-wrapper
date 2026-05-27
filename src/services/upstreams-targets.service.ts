@@ -1,17 +1,19 @@
 import type { Request } from "express";
 import { apiClient } from "../client/api-client";
 import { getKonnectBaseUrl } from "./konnect-base-url.service";
-
-const getBody = (request: Request, fallback: unknown) => {
-  const body = request.body as Record<string, unknown> | undefined;
-  return body && Object.keys(body).length > 0 ? request.body : fallback;
-};
+import { getKongRequestBody } from "./request-metadata.service";
+import {
+  enrichListResponse,
+  recordResourceCreated,
+  recordResourceDeleted,
+  recordResourceUpdated,
+} from "./resource-tracking.service";
 
 export const upstreamsTargetsEndpoints = {
   createUpstreamWithHealthchecks: async (request: Request) => {
     const response = await apiClient.post(
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams`,
-      getBody(request, {
+      getKongRequestBody(request, {
         name: "demo-upstream",
         algorithm: "round-robin",
         hash_on: "none",
@@ -55,13 +57,14 @@ export const upstreamsTargetsEndpoints = {
       }),
       { params: request.query },
     );
+    await recordResourceCreated(request, "upstream", { resource: response.data });
     return response.data;
   },
 
   updateUpstream: async (request: Request) => {
     const response = await apiClient.put(
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}`,
-      getBody(request, {
+      getKongRequestBody(request, {
         name: "demo-upstream",
         algorithm: "round-robin",
         hash_on: "none",
@@ -105,6 +108,7 @@ export const upstreamsTargetsEndpoints = {
       }),
       { params: request.query },
     );
+    await recordResourceUpdated(request, "upstream", { resource: response.data, resourceId: request.params.upstream_id });
     return response.data;
   },
 
@@ -113,7 +117,7 @@ export const upstreamsTargetsEndpoints = {
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams`,
       { params: request.query },
     );
-    return response.data;
+    return enrichListResponse(request, "upstream", response.data);
   },
 
   deleteUpstream: async (request: Request) => {
@@ -121,32 +125,42 @@ export const upstreamsTargetsEndpoints = {
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}`,
       { params: request.query },
     );
+    await recordResourceDeleted(request, "upstream", { resourceId: request.params.upstream_id });
     return response.data ?? { success: true };
   },
 
   createTarget: async (request: Request) => {
     const response = await apiClient.post(
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}/targets`,
-      getBody(request, {
+      getKongRequestBody(request, {
         target: "10.0.0.1:8080",
         weight: 100,
         tags: ["primary"],
       }),
       { params: request.query },
     );
+    await recordResourceCreated(request, "target", {
+      parentIds: { upstreamId: request.params.upstream_id },
+      resource: response.data,
+    });
     return response.data;
   },
 
   updateTarget: async (request: Request) => {
     const response = await apiClient.put(
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}/targets/${request.params.target_id}`,
-      getBody(request, {
+      getKongRequestBody(request, {
         target: "10.0.0.1:8080",
         weight: 100,
         tags: ["primary"],
       }),
       { params: request.query },
     );
+    await recordResourceUpdated(request, "target", {
+      parentIds: { upstreamId: request.params.upstream_id },
+      resource: response.data,
+      resourceId: request.params.target_id,
+    });
     return response.data;
   },
 
@@ -155,7 +169,7 @@ export const upstreamsTargetsEndpoints = {
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}/targets`,
       { params: request.query },
     );
-    return response.data;
+    return enrichListResponse(request, "target", response.data, { parentIds: { upstreamId: request.params.upstream_id } });
   },
 
   deleteTarget: async (request: Request) => {
@@ -163,6 +177,10 @@ export const upstreamsTargetsEndpoints = {
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/upstreams/${request.params.upstream_id}/targets/${request.params.target_id}`,
       { params: request.query },
     );
+    await recordResourceDeleted(request, "target", {
+      parentIds: { upstreamId: request.params.upstream_id },
+      resourceId: request.params.target_id,
+    });
     return response.data ?? { success: true };
   },
 };

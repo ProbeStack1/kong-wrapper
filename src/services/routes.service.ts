@@ -1,17 +1,19 @@
 import type { Request } from "express";
 import { apiClient } from "../client/api-client";
 import { getKonnectBaseUrl } from "./konnect-base-url.service";
-
-const getBody = (request: Request, fallback: unknown) => {
-  const body = request.body as Record<string, unknown> | undefined;
-  return body && Object.keys(body).length > 0 ? request.body : fallback;
-};
+import { getKongRequestBody } from "./request-metadata.service";
+import {
+  enrichListResponse,
+  recordResourceCreated,
+  recordResourceDeleted,
+  recordResourceUpdated,
+} from "./resource-tracking.service";
 
 export const routesEndpoints = {
   createRouteOnServiceAllParams: async (request: Request) => {
     const response = await apiClient.post(
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}/routes`,
-      getBody(request, {
+      getKongRequestBody(request, {
         name: "petstore-route-jc",
         protocols: ["http", "https"],
         methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
@@ -30,13 +32,17 @@ export const routesEndpoints = {
       }),
       { params: request.query },
     );
+    await recordResourceCreated(request, "route", {
+      parentIds: { serviceId: request.params.service_id },
+      resource: response.data,
+    });
     return response.data;
   },
 
   createRouteStandalone: async (request: Request) => {
     const response = await apiClient.post(
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/routes`,
-      getBody(request, {
+      getKongRequestBody(request, {
         name: "httpbin-route",
         paths: ["/demo"],
         strip_path: true,
@@ -46,6 +52,7 @@ export const routesEndpoints = {
       }),
       { params: request.query },
     );
+    await recordResourceCreated(request, "route", { resource: response.data });
     return response.data;
   },
 
@@ -53,7 +60,7 @@ export const routesEndpoints = {
     const response = await apiClient.get(`${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/routes`, {
       params: { size: 100, ...(request.query as Record<string, unknown>) },
     });
-    return response.data;
+    return enrichListResponse(request, "route", response.data);
   },
 
   getRouteByIdOrName: async (request: Request) => {
@@ -67,13 +74,14 @@ export const routesEndpoints = {
   updateRoutePatch: async (request: Request) => {
     const response = await apiClient.put(
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/routes/${request.params.route_id}`,
-      getBody(request, {
+      getKongRequestBody(request, {
         methods: ["GET", "HEAD"],
         strip_path: false,
         tags: ["updated"],
       }),
       { params: request.query },
     );
+    await recordResourceUpdated(request, "route", { resource: response.data, resourceId: request.params.route_id });
     return response.data;
   },
 
@@ -82,6 +90,7 @@ export const routesEndpoints = {
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/routes/${request.params.route_id}`,
       { params: request.query },
     );
+    await recordResourceDeleted(request, "route", { resourceId: request.params.route_id });
     return response.data ?? { success: true };
   },
 
@@ -90,6 +99,6 @@ export const routesEndpoints = {
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/routes/${request.params.route_id}/plugins`,
       { params: request.query },
     );
-    return response.data;
+    return enrichListResponse(request, "plugin", response.data, { parentIds: { routeId: request.params.route_id } });
   },
 };

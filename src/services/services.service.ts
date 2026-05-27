@@ -1,17 +1,19 @@
 import type { Request } from "express";
 import { apiClient } from "../client/api-client";
 import { getKonnectBaseUrl } from "./konnect-base-url.service";
-
-const getBody = (request: Request, fallback: unknown) => {
-  const body = request.body as Record<string, unknown> | undefined;
-  return body && Object.keys(body).length > 0 ? request.body : fallback;
-};
+import { getKongRequestBody } from "./request-metadata.service";
+import {
+  enrichListResponse,
+  recordResourceCreated,
+  recordResourceDeleted,
+  recordResourceUpdated,
+} from "./resource-tracking.service";
 
 export const servicesEndpoints = {
   createServiceAllParams: async (request: Request) => {
     const response = await apiClient.post(
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services`,
-      getBody(request, {
+      getKongRequestBody(request, {
         name: "petstore-service",
         url: "https://petstore3.swagger.io/api/v3",
         retries: 5,
@@ -27,6 +29,7 @@ export const servicesEndpoints = {
       }),
       { params: request.query },
     );
+    await recordResourceCreated(request, "service", { resource: response.data });
     return response.data;
   },
 
@@ -37,7 +40,7 @@ export const servicesEndpoints = {
         params: { size: 100, ...(request.query as Record<string, unknown>) },
       },
     );
-    return response.data;
+    return enrichListResponse(request, "service", response.data);
   },
 
   getServiceByIdOrName: async (request: Request) => {
@@ -51,7 +54,7 @@ export const servicesEndpoints = {
   updateServicePatch: async (request: Request) => {
     const response = await apiClient.patch(
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}`,
-      getBody(request, {
+      getKongRequestBody(request, {
         retries: 3,
         connect_timeout: 30000,
         read_timeout: 30000,
@@ -60,13 +63,14 @@ export const servicesEndpoints = {
       }),
       { params: request.query },
     );
+    await recordResourceUpdated(request, "service", { resource: response.data, resourceId: request.params.service_id });
     return response.data;
   },
 
   upsertServicePut: async (request: Request) => {
     const response = await apiClient.put(
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}`,
-      getBody(request, {
+      getKongRequestBody(request, {
         name: "demo-service",
         protocol: "https",
         host: "httpbin.org",
@@ -81,6 +85,7 @@ export const servicesEndpoints = {
       }),
       { params: request.query },
     );
+    await recordResourceUpdated(request, "service", { resource: response.data, resourceId: request.params.service_id });
     return response.data;
   },
 
@@ -89,6 +94,7 @@ export const servicesEndpoints = {
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}`,
       { params: request.query },
     );
+    await recordResourceDeleted(request, "service", { resourceId: request.params.service_id });
     return response.data ?? { success: true };
   },
 
@@ -97,7 +103,7 @@ export const servicesEndpoints = {
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}/routes`,
       { params: request.query },
     );
-    return response.data;
+    return enrichListResponse(request, "route", response.data, { parentIds: { serviceId: request.params.service_id } });
   },
 
   listPluginsForService: async (request: Request) => {
@@ -105,6 +111,6 @@ export const servicesEndpoints = {
       `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/services/${request.params.service_id}/plugins`,
       { params: request.query },
     );
-    return response.data;
+    return enrichListResponse(request, "plugin", response.data, { parentIds: { serviceId: request.params.service_id } });
   },
 };
