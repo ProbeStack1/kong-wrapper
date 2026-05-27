@@ -13,6 +13,7 @@ export function createKongBundlesRouter(): Router {
       const bundle = await createKongBundle(request);
 
       response.status(201).json({
+        generationId: bundle.generationId,
         artifactId: bundle.artifactId,
         fileName: bundle.fileName,
         downloadUrl: bundle.downloadUrl,
@@ -24,14 +25,18 @@ export function createKongBundlesRouter(): Router {
     }
   });
 
-  router.get("/kong-bundles/:artifact_id/download", async (request, response, next) => {
+  router.get("/kong-bundles/:generation_id/download", async (request, response, next) => {
     try {
-      const bundlePath = getKongBundlePath(request.params.artifact_id);
+      const bundlePath = getKongBundlePath(request.params.generation_id);
       await access(bundlePath);
 
       const fileName =
-        typeof request.query.fileName === "string" && request.query.fileName.trim()
+        typeof request.query.artifactId === "string" && request.query.artifactId.trim()
+          ? path.basename(request.query.artifactId.trim())
+          : typeof request.query.fileName === "string" && request.query.fileName.trim()
           ? path.basename(request.query.fileName.trim())
+          : typeof request.query.zipName === "string" && request.query.zipName.trim()
+          ? path.basename(request.query.zipName.trim())
           : "kong-bundle.zip";
 
       response.download(bundlePath, fileName);

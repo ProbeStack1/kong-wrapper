@@ -11,6 +11,7 @@ import { writeZipFile, type ZipEntry } from "./zip-bundle.service";
 type UnknownRecord = Record<string, unknown>;
 
 type BundleResult = {
+  generationId: string;
   artifactId: string;
   fileName: string;
   filePath: string;
@@ -413,7 +414,7 @@ function normalizeZipFileName(value: unknown): string {
   const requestedName = firstString(value);
 
   if (!requestedName) {
-    throw new HttpError(400, "zipName or fileName is required");
+    throw new HttpError(400, "artifactId, zipName, or fileName is required");
   }
 
   const withExtension = requestedName.toLowerCase().endsWith(".zip") ? requestedName : `${requestedName}.zip`;
@@ -426,12 +427,12 @@ function normalizeZipFileName(value: unknown): string {
   return fileName;
 }
 
-export function getKongBundlePath(artifactId: string): string {
-  if (!/^[a-f0-9-]{36}$/i.test(artifactId)) {
-    throw new HttpError(400, "Invalid artifact id");
+export function getKongBundlePath(generationId: string): string {
+  if (!/^[a-f0-9-]{36}$/i.test(generationId)) {
+    throw new HttpError(400, "Invalid generation id");
   }
 
-  const candidates = getBundleRootCandidates().map((root) => path.join(root, artifactId, "bundle.zip"));
+  const candidates = getBundleRootCandidates().map((root) => path.join(root, generationId, "bundle.zip"));
   const existingPath = candidates.find((candidate) => existsSync(candidate));
 
   return existingPath || candidates[0];
@@ -439,14 +440,15 @@ export function getKongBundlePath(artifactId: string): string {
 
 export async function createKongBundle(request: Request): Promise<BundleResult> {
   const body = asRecord(request.body);
-  const artifactId = crypto.randomUUID();
-  const fileName = normalizeZipFileName(firstString(body.zipName, body.fileName, body.artifactName, body.name));
+  const generationId = crypto.randomUUID();
+  const fileName = normalizeZipFileName(firstString(body.artifactId, body.zipName, body.fileName, body.artifactName, body.name));
+  const artifactId = fileName;
   const bundleName = fileName.replace(/\.zip$/i, "");
   const bundlesRoot = await getWritableBundlesRoot();
-  const artifactDir = path.join(bundlesRoot, artifactId);
+  const artifactDir = path.join(bundlesRoot, generationId);
   const filePath = path.join(artifactDir, "bundle.zip");
   const contextPath = normalizeContextPath(process.env.CONTEXT_PATH);
-  const downloadPath = `${contextPath}/kong-bundles/${encodeURIComponent(artifactId)}/download?fileName=${encodeURIComponent(fileName)}`;
+  const downloadPath = `${contextPath}/kong-bundles/${encodeURIComponent(generationId)}/download?artifactId=${encodeURIComponent(artifactId)}`;
   const files = [".github/workflows/deploy-dev.yml", "kong/dev/kong.yaml", "README.md"];
   const entries: ZipEntry[] = [
     {
@@ -467,6 +469,7 @@ export async function createKongBundle(request: Request): Promise<BundleResult> 
   await writeZipFile(filePath, entries);
 
   return {
+    generationId,
     artifactId,
     fileName,
     filePath,
