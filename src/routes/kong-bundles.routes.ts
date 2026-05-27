@@ -15,6 +15,7 @@ export function createKongBundlesRouter(): Router {
       response.status(201).json({
         generationId: bundle.generationId,
         artifactId: bundle.artifactId,
+        archiveFileName: bundle.archiveFileName,
         fileName: bundle.fileName,
         downloadUrl: bundle.downloadUrl,
         downloadPath: bundle.downloadPath,
@@ -31,8 +32,10 @@ export function createKongBundlesRouter(): Router {
       await access(bundlePath);
 
       const fileName =
-        typeof request.query.artifactId === "string" && request.query.artifactId.trim()
-          ? path.basename(request.query.artifactId.trim())
+        typeof request.query.archiveFileName === "string" && request.query.archiveFileName.trim()
+          ? path.basename(request.query.archiveFileName.trim())
+          : typeof request.query.artifactId === "string" && request.query.artifactId.trim()
+          ? `${path.basename(request.query.artifactId.trim()).replace(/\.zip$/i, "")}.zip`
           : typeof request.query.fileName === "string" && request.query.fileName.trim()
           ? path.basename(request.query.fileName.trim())
           : typeof request.query.zipName === "string" && request.query.zipName.trim()

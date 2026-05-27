@@ -13,6 +13,7 @@ type UnknownRecord = Record<string, unknown>;
 type BundleResult = {
   generationId: string;
   artifactId: string;
+  archiveFileName: string;
   fileName: string;
   filePath: string;
   downloadPath: string;
@@ -191,8 +192,21 @@ function normalizeService(service: UnknownRecord, routes: UnknownRecord[], servi
   return normalized;
 }
 
-function normalizePlugin(plugin: UnknownRecord): UnknownRecord {
-  const normalized = pickKnown(plugin, KNOWN_PLUGIN_KEYS);
+function normalizePlugin(plugin: UnknownRecord, defaultServiceName = ""): UnknownRecord {
+  const explicitServiceName = firstString(
+    plugin.serviceName,
+    plugin.service_name,
+    plugin.serviceId,
+    plugin.service_id,
+    getRelationName(plugin.service),
+  );
+  const hasExplicitScope = Boolean(explicitServiceName || plugin.route || plugin.consumer);
+  const pluginWithDefaultScope = {
+    ...plugin,
+    ...(explicitServiceName ? { service: explicitServiceName } : {}),
+    ...(!hasExplicitScope && defaultServiceName ? { service: defaultServiceName } : {}),
+  };
+  const normalized = pickKnown(pluginWithDefaultScope, KNOWN_PLUGIN_KEYS);
 
   for (const relation of ["service", "route", "consumer"]) {
     if (normalized[relation]) {
@@ -302,7 +316,8 @@ function section(lines: string[], title: string): void {
 function buildKongYaml(body: UnknownRecord): string {
   const routes = asArray(body.routes);
   const services = asArray(body.services).map((service) => normalizeService(service, routes, asArray(body.services).length));
-  const plugins = asArray(body.plugins).map(normalizePlugin);
+  const defaultServiceName = services.length > 0 ? firstString(services[0].name) : "";
+  const plugins = asArray(body.plugins).map((plugin) => normalizePlugin(plugin, defaultServiceName));
   const upstreams = asArray(body.upstreams).map(normalizeUpstream);
 
   if (services.length === 0 && plugins.length === 0 && upstreams.length === 0) {
@@ -410,21 +425,24 @@ function normalizeContextPath(value: string | undefined): string {
   return `${trimmed.startsWith("/") ? trimmed : `/${trimmed}`}`.replace(/\/+$/, "");
 }
 
-function normalizeZipFileName(value: unknown): string {
+function normalizeArtifactName(value: unknown): { artifactId: string; archiveFileName: string } {
   const requestedName = firstString(value);
 
   if (!requestedName) {
     throw new HttpError(400, "artifactId, zipName, or fileName is required");
   }
 
-  const withExtension = requestedName.toLowerCase().endsWith(".zip") ? requestedName : `${requestedName}.zip`;
-  const fileName = path.basename(withExtension).replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  const baseName = path.basename(requestedName).replace(/\.zip$/i, "");
+  const artifactId = baseName.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
 
-  if (!fileName || fileName === ".zip" || !/^[a-zA-Z0-9_.-]+\.zip$/.test(fileName)) {
-    throw new HttpError(400, "Invalid zip file name");
+  if (!artifactId || !/^[a-zA-Z0-9_.-]+$/.test(artifactId)) {
+    throw new HttpError(400, "Invalid artifact id");
   }
 
-  return fileName;
+  return {
+    artifactId,
+    archiveFileName: `${artifactId}.zip`,
+  };
 }
 
 export function getKongBundlePath(generationId: string): string {
@@ -441,14 +459,14 @@ export function getKongBundlePath(generationId: string): string {
 export async function createKongBundle(request: Request): Promise<BundleResult> {
   const body = asRecord(request.body);
   const generationId = crypto.randomUUID();
-  const fileName = normalizeZipFileName(firstString(body.artifactId, body.zipName, body.fileName, body.artifactName, body.name));
-  const artifactId = fileName;
-  const bundleName = fileName.replace(/\.zip$/i, "");
+  const { artifactId, archiveFileName } = normalizeArtifactName(
+    firstString(body.artifactId, body.zipName, body.fileName, body.artifactName, body.name),
+  );
   const bundlesRoot = await getWritableBundlesRoot();
   const artifactDir = path.join(bundlesRoot, generationId);
   const filePath = path.join(artifactDir, "bundle.zip");
   const contextPath = normalizeContextPath(process.env.CONTEXT_PATH);
-  const downloadPath = `${contextPath}/kong-bundles/${encodeURIComponent(generationId)}/download?artifactId=${encodeURIComponent(artifactId)}`;
+  const downloadPath = `${contextPath}/kong-bundles/${encodeURIComponent(generationId)}/download?archiveFileName=${encodeURIComponent(archiveFileName)}`;
   const files = [".github/workflows/deploy-dev.yml", "kong/dev/kong.yaml", "README.md"];
   const entries: ZipEntry[] = [
     {
@@ -461,7 +479,7 @@ export async function createKongBundle(request: Request): Promise<BundleResult> 
     },
     {
       path: "README.md",
-      content: buildReadme(bundleName),
+      content: buildReadme(artifactId),
     },
   ];
 
@@ -471,7 +489,8 @@ export async function createKongBundle(request: Request): Promise<BundleResult> 
   return {
     generationId,
     artifactId,
-    fileName,
+    archiveFileName,
+    fileName: archiveFileName,
     filePath,
     downloadPath,
     downloadUrl: `${getPublicBaseUrl(request)}${downloadPath}`,
