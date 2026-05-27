@@ -41,6 +41,7 @@ function getExplicitBaseUrl(request: Request): string | undefined {
 function getRequestedRegion(request: Request): KonnectRegion | undefined {
   const body = request.body as Record<string, unknown> | undefined;
 
+  
   return (
     toRegion(request.header("x-konnect-region")) ??
     toRegion(getStringValue(request.query.region)) ??
