@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type { Request } from "express";
 
@@ -359,21 +361,36 @@ The stage folder is intentionally not included yet.
 `;
 }
 
-function getBundlesRoot(): string {
-  return process.env.KONG_BUNDLE_TEMP_DIR?.trim() || path.join(process.cwd(), "tmp", "kong-bundles");
+function getBundleRootCandidates(): string[] {
+  return [
+    process.env.KONG_BUNDLE_TEMP_DIR?.trim(),
+    path.join(process.cwd(), "tmp", "kong-bundles"),
+    path.join(os.tmpdir(), "kong-bundles"),
+  ].filter((candidate): candidate is string => Boolean(candidate));
 }
 
 async function ensureWritableDirectory(directoryPath: string): Promise<void> {
-  try {
-    await mkdir(directoryPath, { recursive: true });
+  await mkdir(directoryPath, { recursive: true });
 
-    const probePath = path.join(directoryPath, `.write-check-${crypto.randomUUID()}`);
-    await writeFile(probePath, "");
-    await rm(probePath, { force: true });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown filesystem error";
-    throw new HttpError(500, `Kong bundle storage is not writable at ${directoryPath}: ${message}`);
+  const probePath = path.join(directoryPath, `.write-check-${crypto.randomUUID()}`);
+  await writeFile(probePath, "");
+  await rm(probePath, { force: true });
+}
+
+async function getWritableBundlesRoot(): Promise<string> {
+  const errors: string[] = [];
+
+  for (const candidate of getBundleRootCandidates()) {
+    try {
+      await ensureWritableDirectory(candidate);
+      return candidate;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown filesystem error";
+      errors.push(`${candidate}: ${message}`);
+    }
   }
+
+  throw new HttpError(500, `No writable Kong bundle storage path found. Tried ${errors.join("; ")}`);
 }
 
 function getPublicBaseUrl(request: Request): string {
@@ -414,7 +431,10 @@ export function getKongBundlePath(artifactId: string): string {
     throw new HttpError(400, "Invalid artifact id");
   }
 
-  return path.join(getBundlesRoot(), artifactId, "bundle.zip");
+  const candidates = getBundleRootCandidates().map((root) => path.join(root, artifactId, "bundle.zip"));
+  const existingPath = candidates.find((candidate) => existsSync(candidate));
+
+  return existingPath || candidates[0];
 }
 
 export async function createKongBundle(request: Request): Promise<BundleResult> {
@@ -422,7 +442,7 @@ export async function createKongBundle(request: Request): Promise<BundleResult> 
   const artifactId = crypto.randomUUID();
   const fileName = normalizeZipFileName(firstString(body.zipName, body.fileName, body.artifactName, body.name));
   const bundleName = fileName.replace(/\.zip$/i, "");
-  const bundlesRoot = getBundlesRoot();
+  const bundlesRoot = await getWritableBundlesRoot();
   const artifactDir = path.join(bundlesRoot, artifactId);
   const filePath = path.join(artifactDir, "bundle.zip");
   const contextPath = normalizeContextPath(process.env.CONTEXT_PATH);
@@ -443,7 +463,6 @@ export async function createKongBundle(request: Request): Promise<BundleResult> 
     },
   ];
 
-  await ensureWritableDirectory(bundlesRoot);
   await mkdir(artifactDir, { recursive: true });
   await writeZipFile(filePath, entries);
 
