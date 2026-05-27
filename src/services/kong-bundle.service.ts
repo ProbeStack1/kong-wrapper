@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import type { Request } from "express";
 
@@ -363,6 +363,19 @@ function getBundlesRoot(): string {
   return process.env.KONG_BUNDLE_TEMP_DIR?.trim() || path.join(process.cwd(), "tmp", "kong-bundles");
 }
 
+async function ensureWritableDirectory(directoryPath: string): Promise<void> {
+  try {
+    await mkdir(directoryPath, { recursive: true });
+
+    const probePath = path.join(directoryPath, `.write-check-${crypto.randomUUID()}`);
+    await writeFile(probePath, "");
+    await rm(probePath, { force: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown filesystem error";
+    throw new HttpError(500, `Kong bundle storage is not writable at ${directoryPath}: ${message}`);
+  }
+}
+
 function getPublicBaseUrl(request: Request): string {
   const forwardedProto = firstString(request.header("x-forwarded-proto"));
   const forwardedHost = firstString(request.header("x-forwarded-host"));
@@ -409,7 +422,8 @@ export async function createKongBundle(request: Request): Promise<BundleResult> 
   const artifactId = crypto.randomUUID();
   const fileName = normalizeZipFileName(firstString(body.zipName, body.fileName, body.artifactName, body.name));
   const bundleName = fileName.replace(/\.zip$/i, "");
-  const artifactDir = path.join(getBundlesRoot(), artifactId);
+  const bundlesRoot = getBundlesRoot();
+  const artifactDir = path.join(bundlesRoot, artifactId);
   const filePath = path.join(artifactDir, "bundle.zip");
   const contextPath = normalizeContextPath(process.env.CONTEXT_PATH);
   const downloadPath = `${contextPath}/kong-bundles/${encodeURIComponent(artifactId)}/download?fileName=${encodeURIComponent(fileName)}`;
@@ -429,6 +443,7 @@ export async function createKongBundle(request: Request): Promise<BundleResult> 
     },
   ];
 
+  await ensureWritableDirectory(bundlesRoot);
   await mkdir(artifactDir, { recursive: true });
   await writeZipFile(filePath, entries);
 
