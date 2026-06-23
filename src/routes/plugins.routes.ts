@@ -15,6 +15,9 @@ export function createPluginsRouter(): Router {
   // Konnect: List Available Plugins grouped by Kong Plugin Hub category
   router.get("/v2/control-planes/:control_plane_id/core-entities/v1/available-plugins", controller.handle(pluginsEndpoints.listAvailablePluginsCategorized));
 
+  // Konnect: Get a plugin's config schema by name (used to build the config form before adding it)
+  router.get("/v2/control-planes/:control_plane_id/core-entities/schemas/plugins/:plugin_name", controller.handle(pluginsEndpoints.getPluginSchema));
+
   // Postman: Create Plugin - Global (rate-limiting)
   router.post("/v2/control-planes/:control_plane_id/core-entities/plugins", controller.handle(pluginsEndpoints.createPluginGlobalRateLimiting));
 
