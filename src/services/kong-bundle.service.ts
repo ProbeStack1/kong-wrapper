@@ -594,7 +594,7 @@ async function downloadSpecFromUrl(sourceUrl: string): Promise<string> {
 }
 
 async function getSpecDetailsFromMicroserviceId(microserviceId: string): Promise<SpecDetails> {
-  const microservice = await findDocumentById("microservices", microserviceId);
+  const microservice = await findDocumentById("microservice", microserviceId);
   if (!microservice) {
     throw new HttpError(404, `Microservice not found for id ${microserviceId}`);
   }
