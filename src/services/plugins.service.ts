@@ -467,7 +467,12 @@ function groupPluginsByCategory(plugins: CategorizedPlugin[]) {
 
 function getAuthorizationHeaders(request: Request): Record<string, string> | undefined {
   const authorization = request.header("authorization");
-  return authorization ? { Authorization: authorization } : undefined;
+  if (!authorization || !authorization.trim()) {
+    return undefined;
+  }
+
+  // Collapse accidental extra whitespace (e.g. "Bearer  kpat_..."), which Konnect rejects as a malformed token.
+  return { Authorization: authorization.trim().replace(/\s+/g, " ") };
 }
 
 async function listCustomPluginNames(request: Request, baseUrl: string): Promise<string[]> {
@@ -545,6 +550,17 @@ export const pluginsEndpoints = {
         source: "konnect_available_plugins",
       },
     };
+  },
+
+  getPluginSchema: async (request: Request) => {
+    const response = await apiClient.get(
+      `${await getKonnectBaseUrl(request)}/v2/control-planes/${request.params.control_plane_id}/core-entities/schemas/plugins/${request.params.plugin_name}`,
+      {
+        headers: getAuthorizationHeaders(request),
+        params: request.query,
+      },
+    );
+    return response.data;
   },
 
   createPluginGlobalRateLimiting: async (request: Request) => {
