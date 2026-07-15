@@ -30,7 +30,7 @@ npm start
 
 ## Notes
 
-- The app does not parse the Postman file at runtime anymore
+- The app does not parse the Postman file at runtime anymore 
 - Routes are already written into code under `src/routes`
 - Postman folders are split into separate route files
 - One invalid Postman item named `New Request` was skipped because it has no URL/path
