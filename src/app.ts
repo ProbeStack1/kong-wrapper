@@ -13,6 +13,7 @@ import { createProxyTestsRouter } from "./routes/proxy-tests.routes";
 import { createKongBundlesRouter } from "./routes/kong-bundles.routes";
 import { getMongoHealth } from "./db/mongoose";
 import { HttpError } from "./errors/http-error";
+import { createCorsMiddleware } from "./config/cors-config";
 
 function normalizeContextPath(value: string | undefined): string {
   if (!value || value === "/") {
@@ -28,74 +29,12 @@ function normalizeContextPath(value: string | undefined): string {
   return withLeadingSlash.replace(/\/+$/, "");
 }
 
-function getAllowedOrigins(): string[] {
-  return (process.env.CORS_ORIGIN ?? "http://localhost:5173")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function matchesAllowedOrigin(requestOrigin: string, allowedOrigins: string[]): boolean {
-  return allowedOrigins.some((allowedOrigin) => {
-    if (allowedOrigin === requestOrigin) {
-      return true;
-    }
-
-    if (!allowedOrigin.includes("*")) {
-      return false;
-    }
-
-    const pattern = `^${escapeRegex(allowedOrigin).replace(/\\\*/g, ".*")}$`;
-    return new RegExp(pattern).test(requestOrigin);
-  });
-}
-
-function getAllowedRequestHeaders(request: express.Request): string {
-  const defaultHeaders = [
-    "Origin",
-    "X-Requested-With",
-    "Content-Type",
-    "Accept",
-    "Authorization",
-    "X-Partner-Id",
-  ];
-
-  const requestedHeaders = (request.header("Access-Control-Request-Headers") ?? "")
-    .split(",")
-    .map((header) => header.trim())
-    .filter(Boolean);
-
-  return [...new Set([...defaultHeaders, ...requestedHeaders])].join(", ");
-}
-
 export function buildApp(): Express {
   const app = express();
   const contextPath = normalizeContextPath(process.env.CONTEXT_PATH);
-  const allowedOrigins = getAllowedOrigins();
   const api = express.Router();
 
-  app.use((request, response, next) => {
-    const requestOrigin = request.headers.origin;
-
-    if (requestOrigin && matchesAllowedOrigin(requestOrigin, allowedOrigins)) {
-      response.header("Access-Control-Allow-Origin", requestOrigin);
-      response.header("Vary", "Origin");
-    }
-
-    response.header("Access-Control-Allow-Headers", getAllowedRequestHeaders(request));
-    response.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-
-    if (request.method === "OPTIONS") {
-      response.sendStatus(204);
-      return;
-    }
-
-    next();
-  });
+  app.use(createCorsMiddleware());
 
   app.use(express.json({ limit: "2mb" }));
   app.use(express.urlencoded({ extended: true }));
