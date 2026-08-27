@@ -375,7 +375,7 @@ function buildKongYaml(body: UnknownRecord): string {
   return `${lines.join("\n")}\n`;
 }
 
-function buildWorkflowYaml(): string {
+function buildWorkflowYaml(branchName: string): string {
   return `name: Deploy Kong Dev
 
 on:
@@ -383,7 +383,7 @@ on:
   
   push:
     branches: 
-      - main
+      - ${JSON.stringify(branchName)}
 jobs:
   deploy:
     uses: ForgeCrux/pipeline-template/.github/workflows/kong.yaml@main
@@ -777,6 +777,7 @@ export async function createKongBundle(request: Request): Promise<BundleResult> 
   const body = asRecord(request.body);
   const resourceId = getRequestResourceId(body, request);
   const userEmail = getRequestUserEmail(body, request);
+  const branchName = firstString(body.branchName, "main");
   const generationId = crypto.randomUUID();
   const { artifactId, archiveFileName } = normalizeArtifactName(
     firstString(body.artifactId, body.zipName, body.fileName, body.artifactName, body.name),
@@ -792,7 +793,7 @@ export async function createKongBundle(request: Request): Promise<BundleResult> 
   const entries: ZipEntry[] = [
     {
       path: ".github/workflows/deploy-dev.yml",
-      content: buildWorkflowYaml(),
+      content: buildWorkflowYaml(branchName),
     },
     {
       path: "kong/dev/kong.yaml",
