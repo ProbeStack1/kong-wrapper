@@ -375,7 +375,7 @@ function buildKongYaml(body: UnknownRecord): string {
   return `${lines.join("\n")}\n`;
 }
 
-function buildWorkflowYaml(branchName: string): string {
+function buildWorkflowYaml(branchName: string, branchTag: string): string {
   return `name: Deploy Kong Dev
 
 on:
@@ -395,6 +395,8 @@ jobs:
       kong_config_path: kong/dev/kong.yaml
       control_plane_name: serverless-api-gateway-demo
       validate_only: false
+      branch_name: \${{ github.ref_name }}
+      branch_tag: ${JSON.stringify(branchTag)}
     secrets:
       konnect_token: 'kpat_65DQS60FLIzYl4AtWb2osrdAJuktPnJSe0wgBLd2jY7fxzeAA'
 `;
@@ -778,6 +780,7 @@ export async function createKongBundle(request: Request): Promise<BundleResult> 
   const resourceId = getRequestResourceId(body, request);
   const userEmail = getRequestUserEmail(body, request);
   const branchName = firstString(body.branchName, "main");
+  const branchTag = firstString(body.branchTag, "main");
   const generationId = crypto.randomUUID();
   const { artifactId, archiveFileName } = normalizeArtifactName(
     firstString(body.artifactId, body.zipName, body.fileName, body.artifactName, body.name),
@@ -793,7 +796,7 @@ export async function createKongBundle(request: Request): Promise<BundleResult> 
   const entries: ZipEntry[] = [
     {
       path: ".github/workflows/deploy-dev.yml",
-      content: buildWorkflowYaml(branchName),
+      content: buildWorkflowYaml(branchName, branchTag),
     },
     {
       path: "kong/dev/kong.yaml",
