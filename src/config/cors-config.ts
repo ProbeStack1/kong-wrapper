@@ -15,6 +15,10 @@ const ALLOWED_HEADERS = [
   "X-User-Role",
   "X-Service-Transaction-Id",
   "X-Trace-Id",
+  "X-Onboarding-Id",
+  "X-Onboarding-Context-Id",
+  "X-Konnect-Base-Url",
+  "X-Konnect-Region",
 ];
 const EXPOSED_HEADERS = ["Authorization", "Content-Disposition", "X-Trace-Id"];
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -34,6 +38,9 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://forgegateway.probestack.io",
   "https://forgeaigateway.probestack.io",
   "https://forgehub.probestack.io/",
+  "https://forgehub.probestack.io",
+  "https://forgeshift-w2k.probestack.io",
+  "https://prod.probestack.io",
 ];
 const DEFAULT_ALLOWED_ORIGIN_PATTERNS = [
   "http://localhost:*",
