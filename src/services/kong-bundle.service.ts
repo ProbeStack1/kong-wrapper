@@ -395,12 +395,13 @@ jobs:
       kong_config_path: kong/dev/kong.yaml
       control_plane_name: serverless-api-gateway-demo
       validate_only: false
-      branch_name: \${{ github.ref_name }}
-      branch_tag: ${JSON.stringify(branchTag)}
+      
     secrets:
       konnect_token: 'kpat_65DQS60FLIzYl4AtWb2osrdAJuktPnJSe0wgBLd2jY7fxzeAA'
 `;
 }
+//    branch_name: \${{ github.ref_name }}
+//    branch_tag: ${JSON.stringify(branchTag)}
 
 function buildReadme(bundleName: string): string {
   return `# ${bundleName}
