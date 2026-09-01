@@ -393,7 +393,7 @@ jobs:
     with:
       environment: dev
       kong_config_path: kong/dev/kong.yaml
-      control_plane_name: serverless-api-gateway-demo
+      control_plane_name: serverless-default
       validate_only: false
       
     secrets:
