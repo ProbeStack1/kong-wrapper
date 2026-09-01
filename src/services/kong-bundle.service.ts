@@ -393,11 +393,11 @@ jobs:
     with:
       environment: dev
       kong_config_path: kong/dev/kong.yaml
-      control_plane_name: serverless-default
+      control_plane_name: Forgeshiftw2k
       validate_only: false
       
     secrets:
-      konnect_token: 'kpat_GoRoSzeJTfcE5YY3dAzMdKLvebAghR9M3fgLeyNq2SgQUbY88'
+      konnect_token: 'kpat_HPfFTlLKMFheS5l2ifywp7fERjXadKWohLWSjem90dcdtbf8B'
 `;
 }
 //    branch_name: \${{ github.ref_name }}

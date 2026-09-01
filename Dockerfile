@@ -33,7 +33,7 @@ ENV NODE_ENV=production \
     KONNECT_REGION=in \
     AXIOS_RETRY_DELAY_MS=300 \
     KONNECT_BASE_URL=https://in.api.konghq.com \
-    KONNECT_PAT=kpat_GoRoSzeJTfcE5YY3dAzMdKLvebAghR9M3fgLeyNq2SgQUbY88 \
+    KONNECT_PAT=kpat_HPfFTlLKMFheS5l2ifywp7fERjXadKWohLWSjem90dcdtbf8B \
     MONGODB_URI=mongodb+srv://admin_db_user:HdhPLHmhHEhxSUTa@probestack-prod.mby902c.mongodb.net/probestack-forgesphere?appName=probestack-prod \
     MONGODB_DB_NAME=probestack-forgesphere
 
