@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
+import { getKonnectAuthorizationHeader } from "../services/konnect-auth.service";
 
 const RETRYABLE_ERROR_CODES = new Set([
   "ENOTFOUND",
@@ -26,9 +27,15 @@ function sleep(milliseconds: number): Promise<void> {
   });
 }
 
-function withDefaultHeaders(config: AxiosRequestConfig): AxiosRequestConfig {
-  const authHeader = process.env.KONNECT_PAT
-    ? { Authorization: `Bearer ${process.env.KONNECT_PAT}` }
+function hasAuthorizationHeader(config: AxiosRequestConfig): boolean {
+  const headers = config.headers as Record<string, unknown> | undefined;
+  return Object.keys(headers ?? {}).some((name) => name.toLowerCase() === "authorization");
+}
+
+async function withDefaultHeaders(config: AxiosRequestConfig): Promise<AxiosRequestConfig> {
+  const authorization = hasAuthorizationHeader(config) ? undefined : await getKonnectAuthorizationHeader();
+  const authHeader = authorization
+    ? { Authorization: authorization }
     : {};
 
   return {
@@ -63,7 +70,7 @@ function shouldRetry(error: unknown, attempt: number): boolean {
 
 async function requestWithRetry<T>(config: AxiosRequestConfig, attempt = 0): Promise<AxiosResponse<T>> {
   try {
-    return await axios.request<T>(withDefaultHeaders(config));
+    return await axios.request<T>(await withDefaultHeaders(config));
   } catch (error) {
     if (shouldRetry(error, attempt)) {
       await sleep(getRetryDelayMs());

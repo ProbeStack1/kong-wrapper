@@ -11,9 +11,15 @@ import { createCertificatesSnisRouter } from "./routes/certificates-snis.routes"
 import { createVaultsRouter } from "./routes/vaults.routes";
 import { createProxyTestsRouter } from "./routes/proxy-tests.routes";
 import { createKongBundlesRouter } from "./routes/kong-bundles.routes";
+import { createKonnectConfigRouter } from "./routes/konnect-config.routes";
 import { getMongoHealth } from "./db/mongoose";
 import { HttpError } from "./errors/http-error";
 import { createCorsMiddleware } from "./config/cors-config";
+import {
+  createKonnectRequestContextMiddleware,
+  requireKonnectProfile,
+  requireKonnectRegion,
+} from "./services/konnect-auth.service";
 
 function normalizeContextPath(value: string | undefined): string {
   if (!value || value === "/") {
@@ -38,6 +44,7 @@ export function buildApp(): Express {
 
   app.use(express.json({ limit: "2mb" }));
   app.use(express.urlencoded({ extended: true }));
+  app.use(createKonnectRequestContextMiddleware());
 
   api.get("/health", async (_request, response) => {
     const mongo = await getMongoHealth();
@@ -53,6 +60,7 @@ export function buildApp(): Express {
     });
   });
 
+  api.use("/v2/control-planes", requireKonnectProfile(), requireKonnectRegion());
   api.use(createControlPlanesRouter());
   api.use(createServicesRouter());
   api.use(createRoutesRouter());
@@ -63,6 +71,7 @@ export function buildApp(): Express {
   api.use(createCertificatesSnisRouter());
   api.use(createVaultsRouter());
   api.use(createProxyTestsRouter());
+  api.use(createKonnectConfigRouter());
   api.use(createKongBundlesRouter());
 
   app.use(contextPath || "/", api);

@@ -10,6 +10,7 @@ import mongoose from "mongoose";
 import { HttpError } from "../errors/http-error";
 import { ensureMongoConnected } from "../db/mongoose";
 import { writeZipFile, type ZipEntry } from "./zip-bundle.service";
+import { getRequestStoredKonnectCredential } from "./konnect-auth.service";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -375,7 +376,12 @@ function buildKongYaml(body: UnknownRecord): string {
   return `${lines.join("\n")}\n`;
 }
 
-function buildWorkflowYaml(branchName: string, branchTag: string): string {
+function buildWorkflowYaml(
+  branchName: string,
+  branchTag: string,
+  controlPlaneName: string,
+  konnectPat: string,
+): string {
   return `name: Deploy Kong Dev
 
 on:
@@ -393,11 +399,11 @@ jobs:
     with:
       environment: dev
       kong_config_path: kong/dev/kong.yaml
-      control_plane_name: Forgeshiftw2k
+      control_plane_name: ${JSON.stringify(controlPlaneName)}
       validate_only: false
       
     secrets:
-      konnect_token: 'kpat_HPfFTlLKMFheS5l2ifywp7fERjXadKWohLWSjem90dcdtbf8B'
+      konnect_token: ${JSON.stringify(konnectPat)}
 `;
 }
 //    branch_name: \${{ github.ref_name }}
@@ -778,6 +784,16 @@ export function getKongBundlePath(generationId: string): string {
 
 export async function createKongBundle(request: Request): Promise<BundleResult> {
   const body = asRecord(request.body);
+  const controlPlaneName = firstString(body.control_plane_name, body.controlPlaneName);
+  if (!controlPlaneName) {
+    throw new HttpError(400, "control_plane_name is required to generate the deployment workflow");
+  }
+
+  const storedCredential = await getRequestStoredKonnectCredential();
+  if (!storedCredential) {
+    throw new HttpError(400, "profileId is required to generate the deployment workflow");
+  }
+
   const resourceId = getRequestResourceId(body, request);
   const userEmail = getRequestUserEmail(body, request);
   const branchName = firstString(body.branchName, "main");
@@ -797,7 +813,7 @@ export async function createKongBundle(request: Request): Promise<BundleResult> 
   const entries: ZipEntry[] = [
     {
       path: ".github/workflows/deploy-dev.yml",
-      content: buildWorkflowYaml(branchName, branchTag),
+      content: buildWorkflowYaml(branchName, branchTag, controlPlaneName, storedCredential.pat),
     },
     {
       path: "kong/dev/kong.yaml",

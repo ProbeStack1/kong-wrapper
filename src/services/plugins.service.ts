@@ -1,6 +1,7 @@
 import type { Request } from "express";
 import { apiClient } from "../client/api-client";
 import { getKonnectBaseUrl } from "./konnect-base-url.service";
+import { getRequestKonnectPat } from "./konnect-auth.service";
 import { getKongRequestBody } from "./request-metadata.service";
 import {
   enrichListResponse,
@@ -466,13 +467,8 @@ function groupPluginsByCategory(plugins: CategorizedPlugin[]) {
 }
 
 function getAuthorizationHeaders(request: Request): Record<string, string> | undefined {
-  const authorization = request.header("authorization");
-  if (!authorization || !authorization.trim()) {
-    return undefined;
-  }
-
-  // Collapse accidental extra whitespace (e.g. "Bearer  kpat_..."), which Konnect rejects as a malformed token.
-  return { Authorization: authorization.trim().replace(/\s+/g, " ") };
+  const pat = getRequestKonnectPat(request);
+  return pat ? { Authorization: `Bearer ${pat}` } : undefined;
 }
 
 async function listCustomPluginNames(request: Request, baseUrl: string): Promise<string[]> {

@@ -28,6 +28,71 @@ npm run build
 npm start
 ```
 
+## Dynamic Konnect PAT
+
+Verify the Admin URL and PAT entered on the Kong profile screen:
+
+```http
+POST /config/konnect/verify
+Content-Type: application/json
+
+{
+  "adminUrl": "https://us.api.konghq.com",
+  "patToken": "<konnect-personal-access-token>"
+}
+```
+
+A successful request stores the PAT in MongoDB and returns `valid: true`,
+`stored: true`, a generated `profileId`, and the normalized Admin URL without
+returning the token. Pass the returned ID as the `profileId` query parameter on
+every Kong management API call.
+
+The backend loads the PAT and Admin URL belonging to that profile from MongoDB.
+To update an existing profile, include its `profileId` in the verification
+request body. Wrapper-only `profileId` and `region` query parameters are removed
+before forwarding to Konnect. Management APIs always use the PAT loaded by
+profile ID.
+
+The configuration UI flow is:
+
+1. Load profile options from `GET /config/konnect/profiles`.
+2. Select a profile and region.
+3. Load control planes using
+   `GET /v2/control-planes?region=us&profileId=<profileId>`.
+4. Put the selected control-plane ID in the existing management API URL, and
+   send the same profile ID and region with every request:
+
+```http
+GET /v2/control-planes/<controlPlaneId>/core-entities/services?region=us&profileId=<profileId>
+```
+
+This temporary implementation stores each profile PAT as plain text in the
+`kong_config` collection. Replace it with application-level encryption or a
+secret manager before treating this as a long-term production credential store.
+
+Bundle generation requires `profileId` and `control_plane_name`. It loads the
+profile PAT from MongoDB and writes the selected control-plane name and PAT into
+the generated GitHub Actions workflow:
+
+```http
+POST /kong-bundles
+Content-Type: application/json
+
+{
+  "profileId": "<profileId>",
+  "control_plane_name": "my-control-plane",
+  "services": [
+    {
+      "name": "example-service",
+      "url": "https://example.com"
+    }
+  ]
+}
+```
+
+The generated ZIP therefore contains a live credential. Treat it as secret
+material and do not commit or share the generated workflow.
+
 ## Notes
 
 - The app does not parse the Postman file at runtime anymore 

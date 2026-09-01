@@ -1,5 +1,6 @@
 import type { Request } from "express";
 import { apiClient } from "../client/api-client";
+import { getRequestKonnectRegion, getRequestStoredKonnectCredential } from "./konnect-auth.service";
 
 const REGION_BASE_URLS = {
   in: "https://in.api.konghq.com",
@@ -72,9 +73,19 @@ function getDefaultRegion(): KonnectRegion {
 }
 
 export async function getKonnectBaseUrl(request: Request): Promise<string> {
+  const selectedRegion = toRegion(getRequestKonnectRegion());
+  if (selectedRegion) {
+    return REGION_BASE_URLS[selectedRegion];
+  }
+
   const explicitBaseUrl = getExplicitBaseUrl(request);
   if (explicitBaseUrl) {
     return explicitBaseUrl;
+  }
+
+  const storedCredential = await getRequestStoredKonnectCredential();
+  if (storedCredential?.adminUrl) {
+    return normalizeBaseUrl(storedCredential.adminUrl);
   }
 
   const region = getRequestedRegion(request) ?? getDefaultRegion();

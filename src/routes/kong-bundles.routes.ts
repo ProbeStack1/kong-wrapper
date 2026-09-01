@@ -30,6 +30,8 @@ export function createKongBundlesRouter(): Router {
     try {
       const bundlePath = getKongBundlePath(request.params.generation_id);
       await access(bundlePath);
+      response.setHeader("Cache-Control", "no-store");
+      response.setHeader("Pragma", "no-cache");
 
       const fileName =
         typeof request.query.archiveFileName === "string" && request.query.archiveFileName.trim()

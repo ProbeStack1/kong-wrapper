@@ -18,6 +18,8 @@ const ALLOWED_HEADERS = [
   "X-Onboarding-Id",
   "X-Onboarding-Context-Id",
   "X-Konnect-Base-Url",
+  "X-Konnect-PAT",
+  "X-Konnect-Profile-Id",
   "X-Konnect-Region",
 ];
 const EXPOSED_HEADERS = ["Authorization", "Content-Disposition", "X-Trace-Id"];
