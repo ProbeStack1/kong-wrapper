@@ -397,7 +397,7 @@ jobs:
       validate_only: false
       
     secrets:
-      konnect_token: 'kpat_65DQS60FLIzYl4AtWb2osrdAJuktPnJSe0wgBLd2jY7fxzeAA'
+      konnect_token: 'kpat_GoRoSzeJTfcE5YY3dAzMdKLvebAghR9M3fgLeyNq2SgQUbY88'
 `;
 }
 //    branch_name: \${{ github.ref_name }}
