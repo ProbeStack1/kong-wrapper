@@ -390,6 +390,10 @@ on:
   push:
     branches: 
       - ${JSON.stringify(branchName)}
+
+  pull_request:
+    branches:
+      - ${JSON.stringify(branchTag)}
 jobs:
   deploy:
     uses: ForgeCrux/pipeline-template/.github/workflows/kong.yaml@main
