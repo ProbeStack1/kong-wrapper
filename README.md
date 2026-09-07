@@ -93,6 +93,55 @@ Content-Type: application/json
 The generated ZIP therefore contains a live credential. Treat it as secret
 material and do not commit or share the generated workflow.
 
+## Monitoring and analytics
+
+Konnect exposes proxied requests through `POST /v2/api-requests` and publishes no
+aggregate endpoint, so the wrapper pulls raw records and rolls them up in
+process. Every route below takes the same `profileId` and `region` as the rest of
+the management API.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /analytics/requests` | Raw proxied requests, paged, with bare ids added |
+| `GET`/`POST` `/analytics/summary` | Totals, error rate, latency percentiles, top entities, time series |
+| `GET /analytics/services/:gateway_service_id` | The same roll-up scoped to one gateway service |
+| `GET /analytics/routes/:route_id` | The same roll-up scoped to one route |
+| `GET /analytics/health/:control_plane_id` | Data plane node status and config-sync state |
+
+```http
+GET /analytics/summary?controlPlaneId=<cpId>&region=us&profileId=<profileId>&timeRange=1H
+```
+
+Options, on the query string or in a JSON body:
+
+- `timeRange` — `15M`, `1H`, `6H`, `12H`, `24H` or `7D`. Longer windows need
+  `start` and `end` as ISO 8601 timestamps, which switches Konnect to an
+  absolute range.
+- `serviceId`, `routeId`, `consumerId`, `statusCode`, `httpMethod` — scope the
+  roll-up. Entity ids are the bare Kong ids.
+- `filters` — passed to Konnect as `[{ field, operator, value }]` for anything
+  the shortcuts do not cover.
+- `excludeUnmatched` — defaults to `true`, which drops requests that matched no
+  route. Internet scanner traffic 404s that way and otherwise shows up as a
+  permanent error rate.
+- `maxRecords` (default 5000, max 20000), `pageSize` (max 1000) and `topN`
+  (default 10) bound the scan. `meta.truncated` says whether the cap was hit.
+
+Three Konnect behaviours are worth knowing before reading the numbers:
+
+- **Analytics ids are composites.** Konnect returns `route`, `gateway_service`,
+  `consumer` and `data_plane_node` as `{control_plane_id}:{entity_id}`, while the
+  config API returns bare ids. Filtering by a bare id matches nothing and does
+  not error. The wrapper composes ids on the way in and splits them on the way
+  out, so callers only handle bare ids.
+- **Retention is 14 days**, and an older window returns an empty result set
+  rather than an error. The wrapper rejects it with a 400 instead.
+- **Ingestion lags roughly 50 seconds.** An empty 15M window does not mean the
+  gateway is idle.
+
+Set `ANALYTICS_TIMEOUT_MS` (default 30000) rather than `REQUEST_TIMEOUT_MS` for
+these routes; a multi-page roll-up will not finish inside the 10 second default.
+
 ## Notes
 
 - The app does not parse the Postman file at runtime anymore 

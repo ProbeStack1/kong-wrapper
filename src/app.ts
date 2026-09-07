@@ -12,6 +12,7 @@ import { createVaultsRouter } from "./routes/vaults.routes";
 import { createProxyTestsRouter } from "./routes/proxy-tests.routes";
 import { createKongBundlesRouter } from "./routes/kong-bundles.routes";
 import { createKonnectConfigRouter } from "./routes/konnect-config.routes";
+import { createAnalyticsRouter } from "./routes/analytics.routes";
 import { getMongoHealth } from "./db/mongoose";
 import { HttpError } from "./errors/http-error";
 import { createCorsMiddleware } from "./config/cors-config";
@@ -61,6 +62,8 @@ export function buildApp(): Express {
   });
 
   api.use("/v2/control-planes", requireKonnectProfile(), requireKonnectRegion());
+  // Without these the analytics routes fall back to the KONNECT_PAT in .env.
+  api.use("/analytics", requireKonnectProfile(), requireKonnectRegion());
   api.use(createControlPlanesRouter());
   api.use(createServicesRouter());
   api.use(createRoutesRouter());
@@ -71,6 +74,7 @@ export function buildApp(): Express {
   api.use(createCertificatesSnisRouter());
   api.use(createVaultsRouter());
   api.use(createProxyTestsRouter());
+  api.use(createAnalyticsRouter());
   api.use(createKonnectConfigRouter());
   api.use(createKongBundlesRouter());
 
