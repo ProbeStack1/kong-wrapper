@@ -1,0 +1,1024 @@
+{
+  "info": {
+    "name": "Kong Wrapper - Analytics & Monitoring",
+    "_postman_id": "b7c1a4e2-9f3d-4c68-8a51-2d6f0e4b7c93",
+    "description": "Konnect monitoring and analytics through the kong-wrapper service.\n\n## Before you run\n\nSet these collection variables:\n\n- `baseUrl` - `http://localhost:3000` for local, or `https://forgesphere.probestack.io/kong-wrapper` for the deployed service.\n- `patToken` - a Konnect Personal Access Token (`kpat_...`). Only needed for the first request.\n- `region` - `us` or `in`. It must match the org the PAT belongs to.\n\nThen run the collection in order. `00. Setup` stores the PAT against a generated `profileId` and captures the first `controlPlaneId`; every later request reuses both.\n\n## Reading the results\n\nThe analytics folder asserts the shape of the roll-up and, when records come back, that composite ids were split correctly. Two tests are deliberately named after the assumption they check - if `time series sums to totals` or `latency percentiles populated` fails while records were scanned, Konnect has renamed `request_start` or `latencies_response_ms` and the wrapper's field mapping needs updating.\n\nAn empty result is not a failure. Konnect retains 14 days, lags roughly 50 seconds behind live traffic, and this control plane may simply be idle. The console logs the record count and the first record's field names so you can tell the two cases apart.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "region",
+      "value": "us",
+      "type": "string"
+    },
+    {
+      "key": "adminUrl",
+      "value": "https://us.api.konghq.com",
+      "type": "string"
+    },
+    {
+      "key": "patToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "profileId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "profileName",
+      "value": "analytics-check",
+      "type": "string"
+    },
+    {
+      "key": "controlPlaneId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "serviceId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "routeId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "timeRange",
+      "value": "24H",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "00. Setup",
+      "item": [
+        {
+          "name": "Health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('service is up', () => pm.expect(pm.response.code).to.be.oneOf([200, 503]));",
+                  "const body = pm.response.json();",
+                  "console.log('status:', body.status, '| contextPath:', JSON.stringify(body.contextPath), '| mongo:', body.checks.mongo.status);",
+                  "if (body.checks.mongo.status !== 'UP') {",
+                  "  console.warn('Mongo is ' + body.checks.mongo.status + '. Storing a Konnect profile needs Mongo, so the next request will fail until MONGODB_URI is loaded.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Confirms the service is reachable and says whether Mongo is connected. The profile store needs Mongo."
+          }
+        },
+        {
+          "name": "Verify and store Konnect PAT",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('patToken')) {",
+                  "  throw new Error('Set the patToken collection variable to a Konnect PAT (kpat_...) before running this request.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Konnect accepted the PAT', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) {",
+                  "  console.error(pm.response.text());",
+                  "  return;",
+                  "}",
+                  "const body = pm.response.json();",
+                  "pm.test('PAT verified and stored', () => {",
+                  "  pm.expect(body.valid, 'valid').to.eql(true);",
+                  "  pm.expect(body.stored, 'stored').to.eql(true);",
+                  "});",
+                  "pm.test('response does not echo the token back', () => {",
+                  "  pm.expect(pm.response.text()).to.not.include('kpat_');",
+                  "});",
+                  "if (body.profileId) {",
+                  "  pm.collectionVariables.set('profileId', body.profileId);",
+                  "  console.log('profileId ->', body.profileId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"adminUrl\": \"{{adminUrl}}\",\n  \"patToken\": \"{{patToken}}\",\n  \"profileName\": \"{{profileName}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/config/konnect/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "config",
+                "konnect",
+                "verify"
+              ]
+            },
+            "description": "Validates the PAT against Konnect and stores it in the `kong_config` Mongo collection, then captures the generated `profileId` into a collection variable.\n\nNote: the PAT is stored as plain text. Every later request passes `profileId` instead of the token."
+          }
+        },
+        {
+          "name": "List Konnect profiles",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data || [];",
+                  "pm.test('the stored profile is listed', () => pm.expect(rows.length).to.be.above(0));",
+                  "pm.test('PATs are never returned', () => pm.expect(pm.response.text()).to.not.include('kpat_'));",
+                  "console.log(rows.map((r) => r.profileId + '  ' + (r.profileName || '') + '  ' + r.adminUrl).join('\\n'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/config/konnect/profiles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "config",
+                "konnect",
+                "profiles"
+              ]
+            },
+            "description": "Lists stored profiles without their tokens. Use this to pick a `profileId` if one was already stored by someone else."
+          }
+        },
+        {
+          "name": "List control planes (captures controlPlaneId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
+                  "const rows = pm.response.json().data || [];",
+                  "pm.test('at least one control plane in this region', () => pm.expect(rows.length).to.be.above(0));",
+                  "console.log(rows.map((c) => c.id + '  ' + c.name).join('\\n'));",
+                  "if (rows.length && !pm.collectionVariables.get('controlPlaneId')) {",
+                  "  pm.collectionVariables.set('controlPlaneId', rows[0].id);",
+                  "  console.log('controlPlaneId -> ' + rows[0].id + ' (' + rows[0].name + '). Set it by hand to target a different control plane.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v2/control-planes?region={{region}}&profileId={{profileId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v2",
+                "control-planes"
+              ],
+              "query": [
+                {
+                  "key": "region",
+                  "value": "{{region}}"
+                },
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                }
+              ]
+            },
+            "description": "Existing wrapper endpoint. Captures the first control plane id so the analytics requests have something to target. Set `controlPlaneId` manually to pick a different one."
+          }
+        },
+        {
+          "name": "List gateway services (captures serviceId and routeId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
+                  "const rows = pm.response.json().data || [];",
+                  "console.log(rows.map((s) => s.id + '  ' + s.name).join('\\n'));",
+                  "pm.test('config API returns bare ids, not composites', () => {",
+                  "  rows.forEach((s) => pm.expect(s.id, 'service id').to.not.include(':'));",
+                  "});",
+                  "if (rows.length && !pm.collectionVariables.get('serviceId')) {",
+                  "  pm.collectionVariables.set('serviceId', rows[0].id);",
+                  "  console.log('serviceId -> ' + rows[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v2/control-planes/{{controlPlaneId}}/core-entities/services?region={{region}}&profileId={{profileId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v2",
+                "control-planes",
+                "{{controlPlaneId}}",
+                "core-entities",
+                "services"
+              ],
+              "query": [
+                {
+                  "key": "region",
+                  "value": "{{region}}"
+                },
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                }
+              ]
+            },
+            "description": "Captures a `serviceId` for the per-service roll-up. The assertion here is the point: the config API hands back bare ids, while analytics uses `{control_plane_id}:{entity_id}` composites. The wrapper bridges the two."
+          }
+        }
+      ]
+    },
+    {
+      "name": "01. Analytics",
+      "item": [
+        {
+          "name": "Summary",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
+                  "const b = pm.response.json();",
+                  "",
+                  "pm.test('roll-up shape', () => {",
+                  "  pm.expect(b.totals.requests, 'totals.requests').to.be.a('number');",
+                  "  pm.expect(b.totals.errorRatePercent, 'errorRatePercent').to.be.a('number');",
+                  "  pm.expect(b.latencyMs, 'latencyMs').to.be.an('object');",
+                  "  pm.expect(b.statusCodes, 'statusCodes').to.be.an('object');",
+                  "  pm.expect(b.topRoutes, 'topRoutes').to.be.an('array');",
+                  "  pm.expect(b.timeSeries, 'timeSeries').to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test('control_plane filter was applied', () => {",
+                  "  const f = b.filters.find((x) => x.field === 'control_plane');",
+                  "  pm.expect(f.value).to.deep.equal([pm.collectionVariables.get('controlPlaneId')]);",
+                  "});",
+                  "",
+                  "pm.test('time series covers the window', () => pm.expect(b.timeSeries.length).to.be.above(0));",
+                  "",
+                  "console.log('records scanned: ' + b.meta.recordsScanned + ' | pages: ' + b.meta.pagesFetched + ' | truncated: ' + b.meta.truncated);",
+                  "console.log('requests ' + b.totals.requests + ' | errors ' + b.totals.errors + ' (' + b.totals.errorRatePercent + '%) | p95 ' + b.latencyMs.p95 + 'ms');",
+                  "",
+                  "if (b.meta.recordsScanned === 0) {",
+                  "  console.warn('No records in this window. Konnect keeps 14 days and lags ~50s, and this control plane may be idle. Send some proxy traffic and retry before treating this as a bug.');",
+                  "} else {",
+                  "  pm.test('time series sums to totals (fails if request_start was renamed)', () => {",
+                  "    const sum = b.timeSeries.reduce((acc, x) => acc + x.requests, 0);",
+                  "    pm.expect(sum).to.eql(b.totals.requests);",
+                  "  });",
+                  "  pm.test('latency percentiles populated (fails if latencies_response_ms was renamed)', () => {",
+                  "    pm.expect(b.latencyMs.samples, 'samples').to.be.above(0);",
+                  "    pm.expect(b.latencyMs.p95, 'p95').to.be.a('number');",
+                  "  });",
+                  "  pm.test('status codes were parsed', () => pm.expect(Object.keys(b.statusCodes).length).to.be.above(0));",
+                  "  pm.test('top entity ids are bare, composites kept alongside', () => {",
+                  "    b.topRoutes.concat(b.topServices).forEach((e) => {",
+                  "      pm.expect(e.id, 'bare id').to.not.include(':');",
+                  "      pm.expect(e.compositeId, 'composite id').to.include(':');",
+                  "    });",
+                  "  });",
+                  "  if (b.topRoutes.length && !pm.collectionVariables.get('routeId')) {",
+                  "    pm.collectionVariables.set('routeId', b.topRoutes[0].id);",
+                  "    console.log('routeId -> ' + b.topRoutes[0].id);",
+                  "  }",
+                  "  if (b.topServices.length && !pm.collectionVariables.get('serviceId')) {",
+                  "    pm.collectionVariables.set('serviceId', b.topServices[0].id);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/summary?controlPlaneId={{controlPlaneId}}&timeRange={{timeRange}}&region={{region}}&profileId={{profileId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "controlPlaneId",
+                  "value": "{{controlPlaneId}}"
+                },
+                {
+                  "key": "timeRange",
+                  "value": "{{timeRange}}"
+                },
+                {
+                  "key": "region",
+                  "value": "{{region}}"
+                },
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                },
+                {
+                  "key": "topN",
+                  "value": "10",
+                  "disabled": true
+                },
+                {
+                  "key": "maxRecords",
+                  "value": "5000",
+                  "disabled": true
+                },
+                {
+                  "key": "excludeUnmatched",
+                  "value": "false",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "The main dashboard call. Server-side roll-up over raw Konnect records: totals, error rate, latency percentiles, status histograms, top routes/services/consumers and a gap-filled time series.\n\n`timeRange` accepts `15M`, `1H`, `6H`, `12H`, `24H`, `7D`.\n\nDisabled query params worth enabling:\n- `excludeUnmatched=false` - include requests that matched no route. These are internet scanner probes that 404, excluded by default so an idle gateway does not report a permanent error rate.\n- `maxRecords` - raise it if `meta.truncated` is true.\n- `topN` - how many entries in each top list."
+          }
+        },
+        {
+          "name": "Summary - errors only, last 7 days (POST with filters)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
+                  "const b = pm.response.json();",
+                  "pm.test('the explicit filter was forwarded', () => {",
+                  "  pm.expect(b.filters.some((f) => f.field === 'status_code' && f.operator === '>='), 'status_code >= filter').to.eql(true);",
+                  "});",
+                  "pm.test('7D relative range accepted', () => pm.expect(b.timeRange).to.deep.equal({ type: 'relative', time_range: '7D' }));",
+                  "console.log('error records in 7d: ' + b.meta.recordsScanned);",
+                  "if (b.meta.recordsScanned > 0) {",
+                  "  pm.test('every bucket counted is an error', () => pm.expect(b.totals.errors).to.eql(b.totals.requests));",
+                  "  console.log('by status: ' + JSON.stringify(b.statusCodes));",
+                  "  console.log('worst routes: ' + b.topRoutes.slice(0, 5).map((r) => r.id + ' (' + r.requests + ')').join(', '));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"controlPlaneId\": \"{{controlPlaneId}}\",\n  \"timeRange\": \"7D\",\n  \"topN\": 20,\n  \"filters\": [\n    { \"field\": \"status_code\", \"operator\": \">=\", \"value\": 400 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/analytics/summary?region={{region}}&profileId={{profileId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "region",
+                  "value": "{{region}}"
+                },
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                }
+              ]
+            },
+            "description": "Same roll-up, driven from a JSON body so arbitrary Konnect filters can be passed.\n\nSupported filter fields: `api_product`, `api_product_version`, `application`, `auth_type`, `consumer`, `control_plane`, `data_plane_node`, `gateway_service`, `header_host`, `http_method`, `latencies_response_ms`, `latencies_upstream_ms`, `request_uri`, `response_source`, `route`, `sdk`, `status_code`, `status_code_grouped`, `upstream_status_code`.\n\nOperators: `in`, `not_in`, `=`, `!=`, `<`, `>`, `<=`, `>=`, `starts_with`, `ends_with`, `empty`, `not_empty`."
+          }
+        },
+        {
+          "name": "Raw requests",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
+                  "const b = pm.response.json();",
+                  "pm.test('results is an array', () => pm.expect(b.results).to.be.an('array'));",
+                  "console.log('returned ' + b.results.length + ' record(s)');",
+                  "",
+                  "if (b.results.length === 0) {",
+                  "  console.warn('No records. Either the window is quiet or Konnect changed the response envelope - the wrapper reads results[], data[], records[] or items[].');",
+                  "} else {",
+                  "  const r = b.results[0];",
+                  "  console.log('field names on the first record:');",
+                  "  console.log(Object.keys(r).sort().join(', '));",
+                  "  console.log('sample: ' + JSON.stringify(r, null, 2));",
+                  "  pm.test('composite ids were split into bare ids', () => {",
+                  "    if (r.route) {",
+                  "      pm.expect(r.route, 'raw route is a composite').to.include(':');",
+                  "      pm.expect(r.route_id, 'derived route_id is bare').to.not.include(':');",
+                  "    }",
+                  "    if (r.gateway_service) {",
+                  "      pm.expect(r.gateway_service_id, 'derived gateway_service_id is bare').to.not.include(':');",
+                  "    }",
+                  "  });",
+                  "  pm.test('control_plane_id derived from the composite', () => {",
+                  "    pm.expect(r.control_plane_id).to.eql(pm.collectionVariables.get('controlPlaneId'));",
+                  "  });",
+                  "  pm.test('fields the roll-up depends on are present', () => {",
+                  "    pm.expect(r, 'request_start').to.have.property('request_start');",
+                  "    pm.expect(r, 'status_code').to.have.property('status_code');",
+                  "    pm.expect(r, 'latencies_response_ms').to.have.property('latencies_response_ms');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"controlPlaneId\": \"{{controlPlaneId}}\",\n  \"timeRange\": \"{{timeRange}}\",\n  \"size\": 20\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/analytics/requests?region={{region}}&profileId={{profileId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "requests"
+              ],
+              "query": [
+                {
+                  "key": "region",
+                  "value": "{{region}}"
+                },
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                }
+              ]
+            },
+            "description": "Individual proxied requests for drill-down, with bare ids added alongside the composites Konnect returns.\n\nThis is the request to look at first if the summary comes back empty or wrong - the test logs the field names of the first record, which is how you confirm the wrapper's field mapping still matches Konnect."
+          }
+        },
+        {
+          "name": "Summary for one gateway service",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('serviceId')) {",
+                  "  console.warn('serviceId is empty - run 00. Setup first, or set it by hand.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
+                  "const b = pm.response.json();",
+                  "const bare = pm.collectionVariables.get('serviceId');",
+                  "pm.test('bare id was composed into {control_plane_id}:{entity_id}', () => {",
+                  "  const f = b.filters.find((x) => x.field === 'gateway_service');",
+                  "  pm.expect(f, 'gateway_service filter').to.not.eql(undefined);",
+                  "  pm.expect(f.value[0]).to.eql(pm.collectionVariables.get('controlPlaneId') + ':' + bare);",
+                  "});",
+                  "console.log('service ' + bare + ': ' + b.totals.requests + ' requests, ' + b.totals.errorRatePercent + '% errors, p95 ' + b.latencyMs.p95 + 'ms');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/services/{{serviceId}}?controlPlaneId={{controlPlaneId}}&timeRange={{timeRange}}&region={{region}}&profileId={{profileId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "services",
+                "{{serviceId}}"
+              ],
+              "query": [
+                {
+                  "key": "controlPlaneId",
+                  "value": "{{controlPlaneId}}"
+                },
+                {
+                  "key": "timeRange",
+                  "value": "{{timeRange}}"
+                },
+                {
+                  "key": "region",
+                  "value": "{{region}}"
+                },
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                }
+              ]
+            },
+            "description": "Takes the bare Kong service id straight from the config API. The test asserts the wrapper composed it into the composite Konnect requires - passing a bare id to Konnect directly matches nothing and returns no error, which is the trap this endpoint exists to close."
+          }
+        },
+        {
+          "name": "Summary for one route",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
+                  "const b = pm.response.json();",
+                  "pm.test('route filter composed', () => {",
+                  "  const f = b.filters.find((x) => x.field === 'route');",
+                  "  pm.expect(f.operator).to.eql('in');",
+                  "  pm.expect(f.value[0]).to.include(':');",
+                  "});",
+                  "console.log('route ' + pm.collectionVariables.get('routeId') + ': ' + b.totals.requests + ' requests, p99 ' + b.latencyMs.p99 + 'ms');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/routes/{{routeId}}?controlPlaneId={{controlPlaneId}}&timeRange={{timeRange}}&region={{region}}&profileId={{profileId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "routes",
+                "{{routeId}}"
+              ],
+              "query": [
+                {
+                  "key": "controlPlaneId",
+                  "value": "{{controlPlaneId}}"
+                },
+                {
+                  "key": "timeRange",
+                  "value": "{{timeRange}}"
+                },
+                {
+                  "key": "region",
+                  "value": "{{region}}"
+                },
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                }
+              ]
+            },
+            "description": "Per-route roll-up. `routeId` is captured from the summary's top routes, so run `Summary` first. A bare or an already-composite id both work."
+          }
+        },
+        {
+          "name": "Control plane health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
+                  "const b = pm.response.json();",
+                  "pm.test('data plane list returned', () => pm.expect(b.dataPlanes.total).to.be.a('number'));",
+                  "console.log('expected config hash: ' + b.expectedConfigHash);",
+                  "console.log('nodes: ' + JSON.stringify(b.dataPlanes.byStatus) + ' | in sync: ' + b.dataPlanes.inSync + ' | out of sync: ' + b.dataPlanes.outOfSync);",
+                  "b.dataPlanes.nodes.forEach((n) => console.log('  ' + n.hostname + '  ' + n.version + '  ' + n.status + '  ' + (n.inSync ? 'in sync' : 'STALE')));",
+                  "if (b.configHashError) {",
+                  "  console.warn('expected-config-hash unavailable: ' + b.configHashError.message + ' (node list still returned)');",
+                  "}",
+                  "if (b.expectedConfigHash && b.dataPlanes.outOfSync > 0) {",
+                  "  console.warn(b.dataPlanes.outOfSync + ' data plane(s) have not picked up the pushed config. A deck apply may have landed on the control plane but not the gateways.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/health/{{controlPlaneId}}?region={{region}}&profileId={{profileId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "health",
+                "{{controlPlaneId}}"
+              ],
+              "query": [
+                {
+                  "key": "region",
+                  "value": "{{region}}"
+                },
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                }
+              ]
+            },
+            "description": "Data plane node status plus the config hash the control plane expects. Comparing the two is the direct way to confirm a decK apply actually reached the gateways rather than just the control plane.\n\nIf only one of the two upstream calls fails the response degrades and reports it inline. If both fail the error propagates, so this never reports a healthy-looking control plane when it could not reach Konnect at all."
+          }
+        }
+      ]
+    },
+    {
+      "name": "02. Validation checks",
+      "description": "These need no traffic and no valid control plane - they assert the wrapper rejects the queries that Konnect would otherwise answer with a silent empty result.",
+      "item": [
+        {
+          "name": "Rejects a missing region",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The profile and region guards run before any request validation, so",
+                  "// these checks need both present. Placeholders are fine: with a region",
+                  "// set the wrapper resolves the base URL without ever loading the profile.",
+                  "pm.variables.set('guardProfileId', pm.collectionVariables.get('profileId') || 'validation-placeholder');",
+                  "pm.variables.set('guardControlPlaneId', pm.collectionVariables.get('controlPlaneId') || '00000000-0000-0000-0000-000000000000');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('names the region requirement', () => pm.expect(pm.response.json().error.message).to.include('region'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/summary?controlPlaneId={{guardControlPlaneId}}&profileId={{guardProfileId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "controlPlaneId",
+                  "value": "{{guardControlPlaneId}}"
+                },
+                {
+                  "key": "profileId",
+                  "value": "{{guardProfileId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Rejects a missing profileId",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('names profileId', () => pm.expect(pm.response.json().error.message).to.include('profileId'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/summary?controlPlaneId={{controlPlaneId}}&region={{region}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "controlPlaneId",
+                  "value": "{{controlPlaneId}}"
+                },
+                {
+                  "key": "region",
+                  "value": "{{region}}"
+                }
+              ]
+            },
+            "description": "The analytics routes carry the same profile and region guards as the rest of the management API. Without them a request would silently fall back to the KONNECT_PAT in the service environment."
+          }
+        },
+        {
+          "name": "Rejects an unsupported relative range",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The profile and region guards run before any request validation, so",
+                  "// these checks need both present. Placeholders are fine: with a region",
+                  "// set the wrapper resolves the base URL without ever loading the profile.",
+                  "pm.variables.set('guardProfileId', pm.collectionVariables.get('profileId') || 'validation-placeholder');",
+                  "pm.variables.set('guardControlPlaneId', pm.collectionVariables.get('controlPlaneId') || '00000000-0000-0000-0000-000000000000');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('lists the ranges Konnect accepts', () => {",
+                  "  const m = pm.response.json().error.message;",
+                  "  pm.expect(m).to.include('15M');",
+                  "  pm.expect(m).to.include('7D');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/summary?controlPlaneId={{guardControlPlaneId}}&timeRange=30D&region={{region}}&profileId={{guardProfileId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "controlPlaneId",
+                  "value": "{{guardControlPlaneId}}"
+                },
+                {
+                  "key": "timeRange",
+                  "value": "30D"
+                },
+                {
+                  "key": "region",
+                  "value": "{{region}}"
+                },
+                {
+                  "key": "profileId",
+                  "value": "{{guardProfileId}}"
+                }
+              ]
+            },
+            "description": "Konnect only accepts 15M, 1H, 6H, 12H, 24H and 7D as relative ranges. Anything longer has to be an absolute start/end pair."
+          }
+        },
+        {
+          "name": "Rejects a window outside the 14 day retention",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The profile and region guards run before any request validation, so",
+                  "// these checks need both present. Placeholders are fine: with a region",
+                  "// set the wrapper resolves the base URL without ever loading the profile.",
+                  "pm.variables.set('guardProfileId', pm.collectionVariables.get('profileId') || 'validation-placeholder');",
+                  "pm.variables.set('guardControlPlaneId', pm.collectionVariables.get('controlPlaneId') || '00000000-0000-0000-0000-000000000000');",
+                  "pm.collectionVariables.set('staleStart', new Date(Date.now() - 30 * 86400000).toISOString());",
+                  "pm.collectionVariables.set('staleEnd', new Date(Date.now() - 29 * 86400000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('explains the retention limit', () => pm.expect(pm.response.json().error.message).to.include('retention'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/summary?controlPlaneId={{guardControlPlaneId}}&start={{staleStart}}&end={{staleEnd}}&region={{region}}&profileId={{guardProfileId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "controlPlaneId",
+                  "value": "{{guardControlPlaneId}}"
+                },
+                {
+                  "key": "start",
+                  "value": "{{staleStart}}"
+                },
+                {
+                  "key": "end",
+                  "value": "{{staleEnd}}"
+                },
+                {
+                  "key": "region",
+                  "value": "{{region}}"
+                },
+                {
+                  "key": "profileId",
+                  "value": "{{guardProfileId}}"
+                }
+              ]
+            },
+            "description": "Konnect keeps 14 days and answers an older window with an empty result set rather than an error, which reads as 'no traffic'. The wrapper rejects it instead."
+          }
+        },
+        {
+          "name": "Rejects a misspelled filter field",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The profile and region guards run before any request validation, so",
+                  "// these checks need both present. Placeholders are fine: with a region",
+                  "// set the wrapper resolves the base URL without ever loading the profile.",
+                  "pm.variables.set('guardProfileId', pm.collectionVariables.get('profileId') || 'validation-placeholder');",
+                  "pm.variables.set('guardControlPlaneId', pm.collectionVariables.get('controlPlaneId') || '00000000-0000-0000-0000-000000000000');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('names the bad field and lists valid ones', () => {",
+                  "  const m = pm.response.json().error.message;",
+                  "  pm.expect(m).to.include('sevice_name');",
+                  "  pm.expect(m).to.include('gateway_service');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"controlPlaneId\": \"{{guardControlPlaneId}}\",\n  \"filters\": [\n    { \"field\": \"sevice_name\", \"operator\": \"in\", \"value\": [\"anything\"] }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/analytics/summary?region={{region}}&profileId={{guardProfileId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "region",
+                  "value": "{{region}}"
+                },
+                {
+                  "key": "profileId",
+                  "value": "{{guardProfileId}}"
+                }
+              ]
+            },
+            "description": "Konnect answers an unknown filter field with zero rows and no error, so a typo looks exactly like a quiet gateway. The wrapper validates fields against a known set first."
+          }
+        }
+      ]
+    }
+  ]
+}
