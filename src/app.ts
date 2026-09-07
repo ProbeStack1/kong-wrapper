@@ -62,8 +62,11 @@ export function buildApp(): Express {
   });
 
   api.use("/v2/control-planes", requireKonnectProfile(), requireKonnectRegion());
-  // Without these the analytics routes fall back to the KONNECT_PAT in .env.
-  api.use("/analytics", requireKonnectProfile(), requireKonnectRegion());
+  // Without this the analytics routes fall back to the KONNECT_PAT in .env.
+  // Region is deliberately not required here: the profile stores its own admin
+  // URL, so getKonnectBaseUrl resolves the region from it. Sending region still
+  // works and still wins.
+  api.use("/analytics", requireKonnectProfile());
   api.use(createControlPlanesRouter());
   api.use(createServicesRouter());
   api.use(createRoutesRouter());

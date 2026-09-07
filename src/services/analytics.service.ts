@@ -3,6 +3,7 @@ import type { Request } from "express";
 import { apiClient } from "../client/api-client";
 import { HttpError } from "../errors/http-error";
 import { getKonnectBaseUrl } from "./konnect-base-url.service";
+import { getEntityIndex, listControlPlanes } from "./konnect-entity-index.service";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -262,7 +263,7 @@ function pickBucketMs(windowMs: number): number {
   return candidates.find((candidate) => windowMs / candidate <= targetBuckets) ?? candidates[candidates.length - 1];
 }
 
-function resolveTimeRange(scope: UnknownRecord): ResolvedWindow {
+function resolveTimeRange(scope: UnknownRecord, fallbackRange: RelativeTimeRange = "1H"): ResolvedWindow {
   const rawTimeRange = toRecord(scope.time_range ?? scope.timeRange);
   const explicitType = getStringValue(rawTimeRange.type)?.toLowerCase();
   const start = getStringValue(scope.start) ?? getStringValue(rawTimeRange.start);
@@ -308,7 +309,7 @@ function resolveTimeRange(scope: UnknownRecord): ResolvedWindow {
     getStringValue(scope.timeRange) ??
     getStringValue(rawTimeRange.time_range) ??
     getStringValue(scope.range) ??
-    "1H";
+    fallbackRange;
   const normalized = requested.toUpperCase() as RelativeTimeRange;
 
   if (!RELATIVE_RANGE_MS[normalized]) {
@@ -721,11 +722,20 @@ function aggregate(records: UnknownRecord[], window: ResolvedWindow, topN: numbe
   };
 }
 
-async function runSummary(request: Request): Promise<unknown> {
-  const scope = getRequestScope(request);
-  const baseUrl = await getKonnectBaseUrl(request);
-  const controlPlaneId = requireControlPlaneId(scope, request);
-  const window = resolveTimeRange(scope);
+type Rollup = {
+  window: ResolvedWindow;
+  filters: AnalyticsFilter[];
+  aggregated: UnknownRecord;
+  meta: UnknownRecord;
+};
+
+async function collectRollup(
+  scope: UnknownRecord,
+  baseUrl: string,
+  controlPlaneId: string,
+  fallbackRange: RelativeTimeRange = "1H",
+): Promise<Rollup> {
+  const window = resolveTimeRange(scope, fallbackRange);
   const filters = buildScopeFilters(scope, controlPlaneId);
   const maxRecords = clampInteger(scope.maxRecords, DEFAULT_MAX_RECORDS, 1, MAX_MAX_RECORDS);
   const pageSize = clampInteger(scope.pageSize, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
@@ -740,15 +750,9 @@ async function runSummary(request: Request): Promise<unknown> {
   );
 
   return {
-    controlPlaneId,
-    timeRange: window.timeRange,
-    window: {
-      start: new Date(window.startMs).toISOString(),
-      end: new Date(window.endMs).toISOString(),
-      bucketSeconds: window.bucketMs / 1000,
-    },
+    window,
     filters,
-    ...aggregate(records, window, topN),
+    aggregated: aggregate(records, window, topN),
     meta: {
       recordsScanned: records.length,
       pagesFetched,
@@ -762,6 +766,26 @@ async function runSummary(request: Request): Promise<unknown> {
           }
         : {}),
     },
+  };
+}
+
+async function runSummary(request: Request): Promise<unknown> {
+  const scope = getRequestScope(request);
+  const baseUrl = await getKonnectBaseUrl(request);
+  const controlPlaneId = requireControlPlaneId(scope, request);
+  const { window, filters, aggregated, meta } = await collectRollup(scope, baseUrl, controlPlaneId);
+
+  return {
+    controlPlaneId,
+    timeRange: window.timeRange,
+    window: {
+      start: new Date(window.startMs).toISOString(),
+      end: new Date(window.endMs).toISOString(),
+      bucketSeconds: window.bucketMs / 1000,
+    },
+    filters,
+    ...aggregated,
+    meta,
   };
 }
 
@@ -810,7 +834,249 @@ function describeFailure(reason: unknown): UnknownRecord {
   };
 }
 
+const DASHBOARD_SECTIONS = ["summary", "timeSeries", "topEntities", "statusCodes", "health"] as const;
+
+type DashboardSection = (typeof DASHBOARD_SECTIONS)[number];
+
+function resolveSections(scope: UnknownRecord): Set<DashboardSection> {
+  const requested = getStringValue(scope.include);
+  if (!requested) {
+    return new Set(DASHBOARD_SECTIONS);
+  }
+
+  const names = requested
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+
+  const unknown = names.filter((name) => !DASHBOARD_SECTIONS.includes(name as DashboardSection));
+  if (unknown.length > 0) {
+    throw new HttpError(
+      400,
+      `Unknown include section(s): ${unknown.join(", ")}. Supported: ${DASHBOARD_SECTIONS.join(", ")}`,
+    );
+  }
+
+  return new Set(names as DashboardSection[]);
+}
+
+/**
+ * Picks the control plane to report on. An explicit id wins; a name is matched
+ * against the profile's control planes; otherwise the profile's only control
+ * plane is used. More than one and no way to choose is an error that names the
+ * candidates, rather than a silent pick.
+ */
+async function resolveControlPlane(
+  scope: UnknownRecord,
+  request: Request,
+  baseUrl: string,
+): Promise<{ id: string; name?: string }> {
+  const explicitId =
+    getStringValue(request.params.control_plane_id) ??
+    getStringValue(scope.controlPlaneId) ??
+    getStringValue(scope.control_plane_id);
+
+  const requestedName = getStringValue(scope.controlPlaneName) ?? getStringValue(scope.control_plane_name);
+
+  if (explicitId && !requestedName) {
+    return { id: assertIdentifier(explicitId, "controlPlaneId") };
+  }
+
+  const controlPlanes = await listControlPlanes(baseUrl);
+
+  if (requestedName) {
+    const match = controlPlanes.find((cp) => getStringValue(cp.name) === requestedName);
+    if (!match) {
+      throw new HttpError(
+        404,
+        `No control plane named "${requestedName}". Available: ${controlPlanes.map((cp) => getStringValue(cp.name)).join(", ") || "none"}`,
+      );
+    }
+
+    return { id: assertIdentifier(getStringValue(match.id), "controlPlaneId"), name: getStringValue(match.name) };
+  }
+
+  if (controlPlanes.length === 0) {
+    throw new HttpError(404, "This Konnect profile has no control planes");
+  }
+
+  if (controlPlanes.length > 1) {
+    throw new HttpError(
+      400,
+      `This profile has ${controlPlanes.length} control planes, so controlPlaneId or controlPlaneName is required. Available: ${controlPlanes
+        .map((cp) => `${getStringValue(cp.name)} (${getStringValue(cp.id)})`)
+        .join(", ")}`,
+    );
+  }
+
+  return {
+    id: assertIdentifier(getStringValue(controlPlanes[0].id), "controlPlaneId"),
+    name: getStringValue(controlPlanes[0].name),
+  };
+}
+
+function describeService(service: UnknownRecord | undefined, id: string): UnknownRecord {
+  if (!service) {
+    // Analytics keeps 14 days, so traffic for an entity deleted since then is
+    // still reported. Dropping the row would stop the table reconciling with
+    // the totals, so it is kept and flagged instead.
+    return { id, name: null, deleted: true };
+  }
+
+  return {
+    id,
+    name: getStringValue(service.name) ?? null,
+    host: getStringValue(service.host) ?? null,
+    protocol: getStringValue(service.protocol) ?? null,
+    deleted: false,
+  };
+}
+
+function describeRoute(route: UnknownRecord | undefined, id: string, services: Map<string, UnknownRecord>): UnknownRecord {
+  if (!route) {
+    return { id, name: null, deleted: true };
+  }
+
+  const serviceId = getStringValue(toRecord(route.service).id);
+
+  return {
+    id,
+    name: getStringValue(route.name) ?? null,
+    paths: Array.isArray(route.paths) ? route.paths : [],
+    methods: Array.isArray(route.methods) ? route.methods : [],
+    deleted: false,
+    service: serviceId ? describeService(services.get(serviceId), serviceId) : null,
+  };
+}
+
+function withNames(
+  entries: UnknownRecord[],
+  index: Map<string, UnknownRecord>,
+  describe: (entity: UnknownRecord | undefined, id: string) => UnknownRecord,
+): UnknownRecord[] {
+  return entries.map((entry) => {
+    const id = String(entry.id);
+    const { id: _ignored, ...metrics } = entry;
+    return { ...describe(index.get(id), id), ...metrics };
+  });
+}
+
 export const analyticsEndpoints = {
+  /**
+   * Everything a monitoring screen needs in one call: KPIs, a chart series, top
+   * routes and services with their names resolved, and data plane health.
+   *
+   * Only profileId is required. The control plane is resolved when the profile
+   * has exactly one, the region comes from the profile's stored admin URL, and
+   * the time range defaults to 24H. The fan-out to Konnect happens here so the
+   * client makes one request and joins nothing.
+   */
+  getDashboard: async (request: Request) => {
+    const scope = getRequestScope(request);
+    // Validate pure input before any lookup, so a typo fails immediately rather
+    // than after a profile read and a control plane call.
+    const sections = resolveSections(scope);
+    const baseUrl = await getKonnectBaseUrl(request);
+    const controlPlane = await resolveControlPlane(scope, request, baseUrl);
+
+    const wantsNames = sections.has("topEntities");
+    const wantsHealth = sections.has("health");
+
+    const [rollup, entityIndex, nodes, configHash] = await Promise.all([
+      // A monitoring screen wants a day by default, not the last hour.
+      collectRollup(scope, baseUrl, controlPlane.id, "24H"),
+      wantsNames ? getEntityIndex(baseUrl, controlPlane.id).catch(() => undefined) : Promise.resolve(undefined),
+      wantsHealth
+        ? apiClient
+            .get(`${baseUrl}/v2/control-planes/${controlPlane.id}/nodes`, { timeout: getAnalyticsTimeoutMs() })
+            .then((response) => extractRecords(response.data))
+            .catch(() => undefined)
+        : Promise.resolve(undefined),
+      wantsHealth
+        ? apiClient
+            .get(`${baseUrl}/v2/control-planes/${controlPlane.id}/expected-config-hash`, {
+              timeout: getAnalyticsTimeoutMs(),
+            })
+            .then((response) => toRecord(response.data))
+            .catch(() => undefined)
+        : Promise.resolve(undefined),
+    ]);
+
+    const aggregated = rollup.aggregated as {
+      totals: UnknownRecord;
+      latencyMs: UnknownRecord;
+      statusCodes: UnknownRecord;
+      statusClasses: UnknownRecord;
+      httpMethods: UnknownRecord;
+      topRoutes: UnknownRecord[];
+      topServices: UnknownRecord[];
+      topConsumers: UnknownRecord[];
+      timeSeries: UnknownRecord[];
+    };
+
+    const expectedConfigHash = configHash
+      ? getStringValue(configHash.expected_config_hash) ?? getStringValue(configHash.config_hash)
+      : undefined;
+
+    return {
+      controlPlane: { id: controlPlane.id, name: controlPlane.name ?? null },
+      window: {
+        timeRange: rollup.window.timeRange,
+        start: new Date(rollup.window.startMs).toISOString(),
+        end: new Date(rollup.window.endMs).toISOString(),
+        bucketSeconds: rollup.window.bucketMs / 1000,
+      },
+      filters: rollup.filters,
+
+      ...(sections.has("summary")
+        ? {
+            summary: {
+              ...aggregated.totals,
+              latencyMs: aggregated.latencyMs,
+              httpMethods: aggregated.httpMethods,
+            },
+          }
+        : {}),
+
+      ...(sections.has("statusCodes")
+        ? { statusCodes: aggregated.statusCodes, statusClasses: aggregated.statusClasses }
+        : {}),
+
+      ...(sections.has("timeSeries") ? { timeSeries: aggregated.timeSeries } : {}),
+
+      ...(wantsNames
+        ? {
+            topRoutes: entityIndex
+              ? withNames(aggregated.topRoutes, entityIndex.routes, (entity, id) =>
+                  describeRoute(entity, id, entityIndex.services),
+                )
+              : aggregated.topRoutes,
+            topServices: entityIndex
+              ? withNames(aggregated.topServices, entityIndex.services, describeService)
+              : aggregated.topServices,
+            topConsumers: aggregated.topConsumers,
+          }
+        : {}),
+
+      ...(wantsHealth
+        ? {
+            health: {
+              expectedConfigHash: expectedConfigHash ?? null,
+              ...(nodes ? summarizeNodes(nodes, expectedConfigHash) : { available: false }),
+            },
+          }
+        : {}),
+
+      meta: {
+        ...rollup.meta,
+        // Says whether the names in topRoutes/topServices are real. Without it a
+        // client cannot tell a genuinely unnamed entity from a failed lookup.
+        namesResolved: wantsNames ? Boolean(entityIndex) : undefined,
+        entityIndexAgeSeconds: entityIndex ? Math.round((Date.now() - entityIndex.fetchedAt) / 1000) : undefined,
+      },
+    };
+  },
+
   // Thin pass-through over POST /v2/api-requests with validation, paging and
   // composite id normalization. Use it for drill-down and raw record export.
   queryApiRequests: async (request: Request) => {

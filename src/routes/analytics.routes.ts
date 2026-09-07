@@ -9,6 +9,14 @@ export function createAnalyticsRouter(): Router {
 
   // Folder: Analytics & Monitoring (Konnect POST /v2/api-requests)
 
+  // Everything a monitoring screen needs in one call, names resolved. Only
+  // profileId is required; the control plane, region and window all default.
+  router.get("/analytics/dashboard", controller.handle(analyticsEndpoints.getDashboard));
+  router.get(
+    "/analytics/dashboard/:control_plane_id",
+    controller.handle(analyticsEndpoints.getDashboard),
+  );
+
   // Raw proxied requests, paged and with composite ids split into bare ids.
   router.post("/analytics/requests", controller.handle(analyticsEndpoints.queryApiRequests));
 

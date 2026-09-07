@@ -97,19 +97,71 @@ material and do not commit or share the generated workflow.
 
 Konnect exposes proxied requests through `POST /v2/api-requests` and publishes no
 aggregate endpoint, so the wrapper pulls raw records and rolls them up in
-process. Every route below takes the same `profileId` and `region` as the rest of
-the management API.
+process. Every route below takes the same `profileId` as the rest of the
+management API. Unlike the management routes it does not need `region` — the
+profile already stores its admin URL, so the region is read from there.
 
 | Endpoint | Purpose |
 | --- | --- |
+| `GET /analytics/dashboard` | A whole monitoring screen in one call, names resolved |
 | `POST /analytics/requests` | Raw proxied requests, paged, with bare ids added |
 | `GET`/`POST` `/analytics/summary` | Totals, error rate, latency percentiles, top entities, time series |
 | `GET /analytics/services/:gateway_service_id` | The same roll-up scoped to one gateway service |
 | `GET /analytics/routes/:route_id` | The same roll-up scoped to one route |
 | `GET /analytics/health/:control_plane_id` | Data plane node status and config-sync state |
 
+### One call for a screen
+
+The endpoints below `/analytics/dashboard` mirror Konnect's own shape, which
+means a client has to make several calls and join ids to names itself. Analytics
+only ever returns ids, so a table row would show a UUID. `/analytics/dashboard`
+exists so the client does none of that:
+
 ```http
-GET /analytics/summary?controlPlaneId=<cpId>&region=us&profileId=<profileId>&timeRange=1H
+GET /analytics/dashboard?profileId=<profileId>
+```
+
+`profileId` is the only required parameter. The wrapper resolves the control
+plane when the profile has exactly one, reads the region from the profile's
+stored admin URL, defaults the window to 24H, then fans out to Konnect in
+parallel — the analytics query, the services list, the routes list and data
+plane health — joins the composite ids against the bare config ids, and returns
+once:
+
+```json
+{
+  "controlPlane": { "id": "edb363b5-…", "name": "Forgeshiftw2k" },
+  "window":  { "timeRange": { "type": "relative", "time_range": "24H" }, "start": "…", "end": "…" },
+  "summary": { "requests": 10, "errors": 6, "errorRatePercent": 60,
+               "latencyMs": { "p95": 170, "p99": 170 }, "httpMethods": { "GET": 10 } },
+  "timeSeries": [ { "timestamp": "…", "requests": 4, "errors": 2 } ],
+  "topRoutes": [
+    { "id": "997f4e00-…", "name": "custom-get", "paths": ["/custom/1.0.0/get"],
+      "service": { "id": "0c250ab9-…", "name": "custom-backend" },
+      "requests": 10, "errorRatePercent": 60, "p95LatencyMs": 170 }
+  ],
+  "health": { "expectedConfigHash": "…", "total": 1, "inSync": 1, "outOfSync": 0 },
+  "meta":   { "recordsScanned": 10, "namesResolved": true, "ingestionLagSeconds": 50 }
+}
+```
+
+Optional: `controlPlaneId` or `controlPlaneName` (required only when the profile
+has more than one control plane — the error names the candidates), `timeRange`,
+and `include` to trim the response to the sections a screen renders
+(`summary`, `timeSeries`, `topEntities`, `statusCodes`, `health`).
+
+Two things to know about the enrichment. Service and route lists are cached for
+`ANALYTICS_ENTITY_CACHE_MS` (default 60s), since they change on deploys rather
+than on refreshes and analytics lags ~50s anyway. And an entity deleted inside
+the 14 day analytics window still has traffic, so its row is kept and flagged
+`deleted: true` with a null name — dropping it would stop the table reconciling
+with the totals. `meta.namesResolved` says whether the lookup succeeded at all,
+so a client can tell a genuinely unnamed entity from a failed join.
+
+### The underlying endpoints
+
+```http
+GET /analytics/summary?controlPlaneId=<cpId>&profileId=<profileId>&timeRange=1H
 ```
 
 Options, on the query string or in a JSON body:
@@ -117,6 +169,7 @@ Options, on the query string or in a JSON body:
 - `timeRange` — `15M`, `1H`, `6H`, `12H`, `24H` or `7D`. Longer windows need
   `start` and `end` as ISO 8601 timestamps, which switches Konnect to an
   absolute range.
+- `region` — optional on every analytics route; it is read from the profile.
 - `serviceId`, `routeId`, `consumerId`, `statusCode`, `httpMethod` — scope the
   roll-up. Entity ids are the bare Kong ids.
 - `filters` — passed to Konnect as `[{ field, operator, value }]` for anything

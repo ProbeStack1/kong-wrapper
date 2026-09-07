@@ -299,6 +299,105 @@
       "name": "01. Analytics",
       "item": [
         {
+          "name": "Dashboard (one call, names resolved)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
+                  "const b = pm.response.json();",
+                  "",
+                  "pm.test('control plane resolved server-side', () => {",
+                  "  pm.expect(b.controlPlane.id, 'id').to.be.a('string');",
+                  "});",
+                  "pm.test('everything a screen needs is in one response', () => {",
+                  "  pm.expect(b.summary, 'summary').to.be.an('object');",
+                  "  pm.expect(b.timeSeries, 'timeSeries').to.be.an('array');",
+                  "  pm.expect(b.topRoutes, 'topRoutes').to.be.an('array');",
+                  "  pm.expect(b.topServices, 'topServices').to.be.an('array');",
+                  "  pm.expect(b.health, 'health').to.be.an('object');",
+                  "});",
+                  "",
+                  "console.log('control plane: ' + b.controlPlane.name + ' (' + b.controlPlane.id + ')');",
+                  "console.log('window: ' + JSON.stringify(b.window.timeRange) + ' | records: ' + b.meta.recordsScanned);",
+                  "console.log(b.summary.requests + ' requests | ' + b.summary.errorRatePercent + '% errors | p95 ' + b.summary.latencyMs.p95 + 'ms');",
+                  "",
+                  "if (b.meta.recordsScanned === 0) {",
+                  "  console.warn('No traffic in this window - not a failure. Konnect keeps 14 days and lags ~50s.');",
+                  "} else {",
+                  "  pm.test('names resolved, so no UUIDs need joining client-side', () => {",
+                  "    pm.expect(b.meta.namesResolved, 'meta.namesResolved').to.eql(true);",
+                  "    const live = b.topRoutes.filter((r) => !r.deleted);",
+                  "    live.forEach((r) => pm.expect(r, 'route ' + r.id).to.have.property('name'));",
+                  "  });",
+                  "  pm.test('routes carry their service inline', () => {",
+                  "    b.topRoutes.filter((r) => !r.deleted && r.service).forEach((r) => {",
+                  "      pm.expect(r.service, 'nested service').to.have.property('name');",
+                  "    });",
+                  "  });",
+                  "  pm.test('rows reconcile with the totals', () => {",
+                  "    const sum = b.topRoutes.reduce((acc, r) => acc + r.requests, 0);",
+                  "    pm.expect(sum, 'sum of topRoutes').to.be.at.most(b.summary.requests);",
+                  "  });",
+                  "  console.log(b.topRoutes.map((r) => '  ' + (r.name || '(deleted ' + r.id + ')') + '  ' + r.requests + ' req  ' + r.errorRatePercent + '% err').join('\n'));",
+                  "  const gone = b.topRoutes.filter((r) => r.deleted);",
+                  "  if (gone.length) console.warn(gone.length + ' route(s) have traffic but no longer exist in config (deleted inside the 14 day window).');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/dashboard?profileId={{profileId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "dashboard"
+              ],
+              "query": [
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                },
+                {
+                  "key": "controlPlaneId",
+                  "value": "{{controlPlaneId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "controlPlaneName",
+                  "value": "Forgeshiftw2k",
+                  "disabled": true
+                },
+                {
+                  "key": "timeRange",
+                  "value": "{{timeRange}}",
+                  "disabled": true
+                },
+                {
+                  "key": "include",
+                  "value": "summary,timeSeries,topEntities,statusCodes,health",
+                  "disabled": true
+                },
+                {
+                  "key": "region",
+                  "value": "{{region}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "One call for a whole monitoring screen. **Only `profileId` is required.**\n\nThe wrapper resolves the control plane (when the profile has exactly one), infers the region from the profile's stored admin URL, defaults the window to 24H, then fans out to Konnect in parallel - the analytics query, the services list, the routes list and data plane health - joins the composite `{control_plane_id}:{entity_id}` ids against the bare config ids, and returns once.\n\nSo `topRoutes` arrives as `{ name, paths, service: { name } , requests, errorRatePercent, p95LatencyMs }` rather than a UUID the client has to look up. Nothing is left to join.\n\nDisabled params, all optional:\n- `controlPlaneId` / `controlPlaneName` - required only when the profile has more than one control plane; the error names the candidates.\n- `timeRange` - defaults to 24H here (the raw endpoints default to 1H).\n- `include` - trim the payload to the sections a screen actually renders.\n- `region` - inferred from the profile; sending it still overrides.\n\nEntities deleted inside the 14 day analytics window keep their traffic rows, flagged `deleted: true` with a null name, so the table still reconciles with the totals."
+          }
+        },
+        {
           "name": "Summary",
           "event": [
             {
@@ -728,58 +827,6 @@
       "name": "02. Validation checks",
       "description": "These need no traffic and no valid control plane - they assert the wrapper rejects the queries that Konnect would otherwise answer with a silent empty result.",
       "item": [
-        {
-          "name": "Rejects a missing region",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// The profile and region guards run before any request validation, so",
-                  "// these checks need both present. Placeholders are fine: with a region",
-                  "// set the wrapper resolves the base URL without ever loading the profile.",
-                  "pm.variables.set('guardProfileId', pm.collectionVariables.get('profileId') || 'validation-placeholder');",
-                  "pm.variables.set('guardControlPlaneId', pm.collectionVariables.get('controlPlaneId') || '00000000-0000-0000-0000-000000000000');"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('400', () => pm.response.to.have.status(400));",
-                  "pm.test('names the region requirement', () => pm.expect(pm.response.json().error.message).to.include('region'));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/analytics/summary?controlPlaneId={{guardControlPlaneId}}&profileId={{guardProfileId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "analytics",
-                "summary"
-              ],
-              "query": [
-                {
-                  "key": "controlPlaneId",
-                  "value": "{{guardControlPlaneId}}"
-                },
-                {
-                  "key": "profileId",
-                  "value": "{{guardProfileId}}"
-                }
-              ]
-            }
-          }
-        },
         {
           "name": "Rejects a missing profileId",
           "event": [
