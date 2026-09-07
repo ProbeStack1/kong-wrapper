@@ -731,7 +731,11 @@ type Rollup = {
 
 async function collectRollup(
   scope: UnknownRecord,
-  baseUrl: string,
+  // A thunk, not a string, so every pure check below runs before the profile is
+  // read or Konnect is called. A bad time range or a misspelled filter field is
+  // a 400 the caller can act on; making them wait behind a credential lookup
+  // turns a typo into an unrelated 404.
+  resolveBaseUrl: () => Promise<string>,
   controlPlaneId: string,
   fallbackRange: RelativeTimeRange = "1H",
 ): Promise<Rollup> {
@@ -742,7 +746,7 @@ async function collectRollup(
   const topN = clampInteger(scope.topN, DEFAULT_TOP_N, 1, MAX_TOP_N);
 
   const { records, pagesFetched, truncated } = await fetchApiRequests(
-    baseUrl,
+    await resolveBaseUrl(),
     window.timeRange,
     filters,
     maxRecords,
@@ -771,9 +775,12 @@ async function collectRollup(
 
 async function runSummary(request: Request): Promise<unknown> {
   const scope = getRequestScope(request);
-  const baseUrl = await getKonnectBaseUrl(request);
   const controlPlaneId = requireControlPlaneId(scope, request);
-  const { window, filters, aggregated, meta } = await collectRollup(scope, baseUrl, controlPlaneId);
+  const { window, filters, aggregated, meta } = await collectRollup(
+    scope,
+    () => getKonnectBaseUrl(request),
+    controlPlaneId,
+  );
 
   return {
     controlPlaneId,
@@ -984,7 +991,7 @@ export const analyticsEndpoints = {
 
     const [rollup, entityIndex, nodes, configHash] = await Promise.all([
       // A monitoring screen wants a day by default, not the last hour.
-      collectRollup(scope, baseUrl, controlPlane.id, "24H"),
+      collectRollup(scope, async () => baseUrl, controlPlane.id, "24H"),
       wantsNames ? getEntityIndex(baseUrl, controlPlane.id).catch(() => undefined) : Promise.resolve(undefined),
       wantsHealth
         ? apiClient

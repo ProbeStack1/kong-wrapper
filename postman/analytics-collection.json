@@ -2,7 +2,7 @@
   "info": {
     "name": "Kong Wrapper - Analytics & Monitoring",
     "_postman_id": "b7c1a4e2-9f3d-4c68-8a51-2d6f0e4b7c93",
-    "description": "Konnect monitoring and analytics through the kong-wrapper service.\n\n## Before you run\n\nSet these collection variables:\n\n- `baseUrl` - `http://localhost:3000` for local, or `https://forgesphere.probestack.io/kong-wrapper` for the deployed service.\n- `patToken` - a Konnect Personal Access Token (`kpat_...`). Only needed for the first request.\n- `region` - `us` or `in`. It must match the org the PAT belongs to.\n\nThen run the collection in order. `00. Setup` stores the PAT against a generated `profileId` and captures the first `controlPlaneId`; every later request reuses both.\n\n## Reading the results\n\nThe analytics folder asserts the shape of the roll-up and, when records come back, that composite ids were split correctly. Two tests are deliberately named after the assumption they check - if `time series sums to totals` or `latency percentiles populated` fails while records were scanned, Konnect has renamed `request_start` or `latencies_response_ms` and the wrapper's field mapping needs updating.\n\nAn empty result is not a failure. Konnect retains 14 days, lags roughly 50 seconds behind live traffic, and this control plane may simply be idle. The console logs the record count and the first record's field names so you can tell the two cases apart.",
+    "description": "Konnect monitoring and analytics through the kong-wrapper service.\n\n## Before you run\n\nSet these collection variables:\n\n- `baseUrl` - `http://localhost:3000` for local, or `https://forgesphere.probestack.io/kong-wrapper` for the deployed service.\n- `patToken` - a Konnect Personal Access Token (`kpat_...`). Only needed by `Verify and store Konnect PAT`; skip it if a profile already exists, and pick one from `List Konnect profiles` instead.\n- `region` - `us` or `in`, and only for the `00. Setup` folder. The analytics routes do not take a region: the profile stores its own admin URL, so the wrapper reads it from there.\n\nThen run the collection in order. `00. Setup` stores the PAT against a generated `profileId` and captures a `controlPlaneId` and `serviceId`; everything after it reuses them.\n\n## Start with the Dashboard request\n\n`GET /analytics/dashboard` is the one a frontend should call. **`profileId` is its only required parameter.** The wrapper resolves the control plane, infers the region, defaults the window to 24H, then fetches the analytics query, the services list, the routes list and data plane health in parallel and returns them as one response - with route and service **names** already joined in, so nothing is left for the client to look up.\n\nThe requests under it are the underlying, Konnect-shaped endpoints. They are still useful for drill-down and for scoping a roll-up to a single entity, but a screen should not have to assemble itself out of them.\n\n## Reading the results\n\nTests assert the things that can silently go wrong, not just status codes:\n\n- Entity ids must come back bare, with the `{control_plane_id}:{entity_id}` composite kept alongside. Filtering Konnect by a bare id matches nothing and does not error.\n- `time series sums to totals` fails precisely when Konnect renames `request_start`.\n- `status codes were parsed` fails when the status field moves. It reads `response_http_status` (a string), while the *filter* field is `status_code` - Konnect uses different names on each side, and getting it wrong reports a 0% error rate rather than failing.\n- On the dashboard, `names resolved` fails if the services or routes lookup did not land, which is the difference between a genuinely unnamed entity and a broken join.\n\nAn empty result is not a failure. Konnect retains 14 days, lags roughly 50 seconds behind live traffic, and the control plane may simply be idle. The console logs the record count and, in `Raw requests`, the field names of the first record, so you can tell the two apart.\n\nEntities deleted inside the retention window still have traffic. Their rows are kept and flagged `deleted: true` with a null name, so the tables still reconcile with the totals.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -54,6 +54,11 @@
     {
       "key": "timeRange",
       "value": "24H",
+      "type": "string"
+    },
+    {
+      "key": "controlPlaneName",
+      "value": "",
       "type": "string"
     }
   ],
@@ -310,6 +315,9 @@
                   "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
                   "const b = pm.response.json();",
                   "",
+                  "pm.test('no region was sent - it came from the profile', () => {",
+                  "  pm.expect(pm.request.url.query.has('region'), 'region query param').to.eql(false);",
+                  "});",
                   "pm.test('control plane resolved server-side', () => {",
                   "  pm.expect(b.controlPlane.id, 'id').to.be.a('string');",
                   "});",
@@ -386,15 +394,159 @@
                   "key": "include",
                   "value": "summary,timeSeries,topEntities,statusCodes,health",
                   "disabled": true
-                },
-                {
-                  "key": "region",
-                  "value": "{{region}}",
-                  "disabled": true
                 }
               ]
             },
             "description": "One call for a whole monitoring screen. **Only `profileId` is required.**\n\nThe wrapper resolves the control plane (when the profile has exactly one), infers the region from the profile's stored admin URL, defaults the window to 24H, then fans out to Konnect in parallel - the analytics query, the services list, the routes list and data plane health - joins the composite `{control_plane_id}:{entity_id}` ids against the bare config ids, and returns once.\n\nSo `topRoutes` arrives as `{ name, paths, service: { name } , requests, errorRatePercent, p95LatencyMs }` rather than a UUID the client has to look up. Nothing is left to join.\n\nDisabled params, all optional:\n- `controlPlaneId` / `controlPlaneName` - required only when the profile has more than one control plane; the error names the candidates.\n- `timeRange` - defaults to 24H here (the raw endpoints default to 1H).\n- `include` - trim the payload to the sections a screen actually renders.\n- `region` - inferred from the profile; sending it still overrides.\n\nEntities deleted inside the 14 day analytics window keep their traffic rows, flagged `deleted: true` with a null name, so the table still reconciles with the totals."
+          }
+        },
+        {
+          "name": "Dashboard - trimmed with include",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
+                  "const b = pm.response.json();",
+                  "pm.test('requested sections are present', () => {",
+                  "  pm.expect(b.summary, 'summary').to.be.an('object');",
+                  "  pm.expect(b.timeSeries, 'timeSeries').to.be.an('array');",
+                  "});",
+                  "pm.test('unrequested sections are omitted, not nulled', () => {",
+                  "  pm.expect(b.topRoutes, 'topRoutes').to.eql(undefined);",
+                  "  pm.expect(b.topServices, 'topServices').to.eql(undefined);",
+                  "  pm.expect(b.health, 'health').to.eql(undefined);",
+                  "  pm.expect(b.statusCodes, 'statusCodes').to.eql(undefined);",
+                  "});",
+                  "pm.test('skipping topEntities skips the name lookup behind it', () => {",
+                  "  pm.expect(b.meta.namesResolved).to.eql(undefined);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "dashboard"
+              ],
+              "query": [
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                },
+                {
+                  "key": "include",
+                  "value": "summary,timeSeries"
+                }
+              ],
+              "raw": "{{baseUrl}}/analytics/dashboard?profileId={{profileId}}&include=summary,timeSeries"
+            },
+            "description": "Trims the response to the sections a screen actually renders. A KPI strip with a chart needs no entity tables and no health block, and skipping `topEntities` also skips the services and routes lookups behind it.\n\nSections: `summary`, `timeSeries`, `topEntities`, `statusCodes`, `health`."
+          }
+        },
+        {
+          "name": "Dashboard - control plane by name",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
+                  "const b = pm.response.json();",
+                  "pm.test('name resolved to a control plane', () => {",
+                  "  pm.expect(b.controlPlane.name).to.eql(pm.collectionVariables.get('controlPlaneName'));",
+                  "  pm.expect(b.controlPlane.id).to.be.a('string');",
+                  "});",
+                  "if (!pm.collectionVariables.get('controlPlaneId')) {",
+                  "  pm.collectionVariables.set('controlPlaneId', b.controlPlane.id);",
+                  "  console.log('controlPlaneId -> ' + b.controlPlane.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "dashboard"
+              ],
+              "query": [
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                },
+                {
+                  "key": "controlPlaneName",
+                  "value": "{{controlPlaneName}}"
+                }
+              ],
+              "raw": "{{baseUrl}}/analytics/dashboard?profileId={{profileId}}&controlPlaneName={{controlPlaneName}}"
+            },
+            "description": "Selects the control plane by name, so a client that knows which environment it wants does not have to resolve an id first.\n\nAn unknown name returns 404 listing the names that do exist. Set the `controlPlaneName` collection variable before running this."
+          }
+        },
+        {
+          "name": "Dashboard - control plane in the path",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
+                  "const b = pm.response.json();",
+                  "pm.test('path parameter selected the control plane', () => {",
+                  "  pm.expect(b.controlPlane.id).to.eql(pm.collectionVariables.get('controlPlaneId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "dashboard",
+                "{{controlPlaneId}}"
+              ],
+              "query": [
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                },
+                {
+                  "key": "timeRange",
+                  "value": "{{timeRange}}",
+                  "disabled": true
+                }
+              ],
+              "raw": "{{baseUrl}}/analytics/dashboard/{{controlPlaneId}}?profileId={{profileId}}"
+            },
+            "description": "The same endpoint with the control plane as a path segment, for clients that prefer a resource-shaped URL. Equivalent to passing `controlPlaneId` as a query parameter."
           }
         },
         {
@@ -462,7 +614,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/analytics/summary?controlPlaneId={{controlPlaneId}}&timeRange={{timeRange}}&region={{region}}&profileId={{profileId}}",
+              "raw": "{{baseUrl}}/analytics/summary?controlPlaneId={{controlPlaneId}}&timeRange={{timeRange}}&profileId={{profileId}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -478,10 +630,6 @@
                 {
                   "key": "timeRange",
                   "value": "{{timeRange}}"
-                },
-                {
-                  "key": "region",
-                  "value": "{{region}}"
                 },
                 {
                   "key": "profileId",
@@ -545,7 +693,7 @@
               "raw": "{\n  \"controlPlaneId\": \"{{controlPlaneId}}\",\n  \"timeRange\": \"7D\",\n  \"topN\": 20,\n  \"filters\": [\n    { \"field\": \"status_code\", \"operator\": \">=\", \"value\": 400 }\n  ]\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/analytics/summary?region={{region}}&profileId={{profileId}}",
+              "raw": "{{baseUrl}}/analytics/summary?profileId={{profileId}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -554,10 +702,6 @@
                 "summary"
               ],
               "query": [
-                {
-                  "key": "region",
-                  "value": "{{region}}"
-                },
                 {
                   "key": "profileId",
                   "value": "{{profileId}}"
@@ -623,7 +767,7 @@
               "raw": "{\n  \"controlPlaneId\": \"{{controlPlaneId}}\",\n  \"timeRange\": \"{{timeRange}}\",\n  \"size\": 20\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/analytics/requests?region={{region}}&profileId={{profileId}}",
+              "raw": "{{baseUrl}}/analytics/requests?profileId={{profileId}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -632,10 +776,6 @@
                 "requests"
               ],
               "query": [
-                {
-                  "key": "region",
-                  "value": "{{region}}"
-                },
                 {
                   "key": "profileId",
                   "value": "{{profileId}}"
@@ -682,7 +822,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/analytics/services/{{serviceId}}?controlPlaneId={{controlPlaneId}}&timeRange={{timeRange}}&region={{region}}&profileId={{profileId}}",
+              "raw": "{{baseUrl}}/analytics/services/{{serviceId}}?controlPlaneId={{controlPlaneId}}&timeRange={{timeRange}}&profileId={{profileId}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -699,10 +839,6 @@
                 {
                   "key": "timeRange",
                   "value": "{{timeRange}}"
-                },
-                {
-                  "key": "region",
-                  "value": "{{region}}"
                 },
                 {
                   "key": "profileId",
@@ -738,7 +874,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/analytics/routes/{{routeId}}?controlPlaneId={{controlPlaneId}}&timeRange={{timeRange}}&region={{region}}&profileId={{profileId}}",
+              "raw": "{{baseUrl}}/analytics/routes/{{routeId}}?controlPlaneId={{controlPlaneId}}&timeRange={{timeRange}}&profileId={{profileId}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -755,10 +891,6 @@
                 {
                   "key": "timeRange",
                   "value": "{{timeRange}}"
-                },
-                {
-                  "key": "region",
-                  "value": "{{region}}"
                 },
                 {
                   "key": "profileId",
@@ -798,7 +930,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/analytics/health/{{controlPlaneId}}?region={{region}}&profileId={{profileId}}",
+              "raw": "{{baseUrl}}/analytics/health/{{controlPlaneId}}?profileId={{profileId}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -808,10 +940,6 @@
                 "{{controlPlaneId}}"
               ],
               "query": [
-                {
-                  "key": "region",
-                  "value": "{{region}}"
-                },
                 {
                   "key": "profileId",
                   "value": "{{profileId}}"
@@ -845,7 +973,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/analytics/summary?controlPlaneId={{controlPlaneId}}&region={{region}}",
+              "raw": "{{baseUrl}}/analytics/summary?controlPlaneId={{controlPlaneId}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -857,10 +985,6 @@
                 {
                   "key": "controlPlaneId",
                   "value": "{{controlPlaneId}}"
-                },
-                {
-                  "key": "region",
-                  "value": "{{region}}"
                 }
               ]
             },
@@ -902,7 +1026,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/analytics/summary?controlPlaneId={{guardControlPlaneId}}&timeRange=30D&region={{region}}&profileId={{guardProfileId}}",
+              "raw": "{{baseUrl}}/analytics/summary?controlPlaneId={{guardControlPlaneId}}&timeRange=30D&profileId={{guardProfileId}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -918,10 +1042,6 @@
                 {
                   "key": "timeRange",
                   "value": "30D"
-                },
-                {
-                  "key": "region",
-                  "value": "{{region}}"
                 },
                 {
                   "key": "profileId",
@@ -965,7 +1085,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/analytics/summary?controlPlaneId={{guardControlPlaneId}}&start={{staleStart}}&end={{staleEnd}}&region={{region}}&profileId={{guardProfileId}}",
+              "raw": "{{baseUrl}}/analytics/summary?controlPlaneId={{guardControlPlaneId}}&start={{staleStart}}&end={{staleEnd}}&profileId={{guardProfileId}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -985,10 +1105,6 @@
                 {
                   "key": "end",
                   "value": "{{staleEnd}}"
-                },
-                {
-                  "key": "region",
-                  "value": "{{region}}"
                 },
                 {
                   "key": "profileId",
@@ -1043,7 +1159,7 @@
               "raw": "{\n  \"controlPlaneId\": \"{{guardControlPlaneId}}\",\n  \"filters\": [\n    { \"field\": \"sevice_name\", \"operator\": \"in\", \"value\": [\"anything\"] }\n  ]\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/analytics/summary?region={{region}}&profileId={{guardProfileId}}",
+              "raw": "{{baseUrl}}/analytics/summary?profileId={{guardProfileId}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1053,16 +1169,66 @@
               ],
               "query": [
                 {
-                  "key": "region",
-                  "value": "{{region}}"
-                },
-                {
                   "key": "profileId",
                   "value": "{{guardProfileId}}"
                 }
               ]
             },
             "description": "Konnect answers an unknown filter field with zero rows and no error, so a typo looks exactly like a quiet gateway. The wrapper validates fields against a known set first."
+          }
+        },
+        {
+          "name": "Rejects an unknown include section",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// include is validated before the profile lookup, so a placeholder works.",
+                  "pm.variables.set('guardProfileId', pm.collectionVariables.get('profileId') || 'validation-placeholder');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('names the bad section and lists the valid ones', () => {",
+                  "  const m = pm.response.json().error.message;",
+                  "  pm.expect(m).to.include('bogus');",
+                  "  pm.expect(m).to.include('topEntities');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "dashboard"
+              ],
+              "query": [
+                {
+                  "key": "profileId",
+                  "value": "{{guardProfileId}}"
+                },
+                {
+                  "key": "include",
+                  "value": "summary,bogus"
+                }
+              ],
+              "raw": "{{baseUrl}}/analytics/dashboard?profileId={{guardProfileId}}&include=summary,bogus"
+            },
+            "description": "Validated before any profile read or Konnect call, so a typo fails immediately rather than after two round trips."
           }
         }
       ]
