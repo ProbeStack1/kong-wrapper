@@ -107,7 +107,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.collectionVariables.get('patToken')) {",
+                  "if (!pm.variables.get('patToken')) {",
                   "  throw new Error('Set the patToken collection variable to a Konnect PAT (kpat_...) before running this request.');",
                   "}"
                 ]
@@ -212,7 +212,7 @@
                   "const rows = pm.response.json().data || [];",
                   "pm.test('at least one control plane in this region', () => pm.expect(rows.length).to.be.above(0));",
                   "console.log(rows.map((c) => c.id + '  ' + c.name).join('\\n'));",
-                  "if (rows.length && !pm.collectionVariables.get('controlPlaneId')) {",
+                  "if (rows.length && !pm.variables.get('controlPlaneId')) {",
                   "  pm.collectionVariables.set('controlPlaneId', rows[0].id);",
                   "  console.log('controlPlaneId -> ' + rows[0].id + ' (' + rows[0].name + '). Set it by hand to target a different control plane.');",
                   "}"
@@ -261,7 +261,7 @@
                   "pm.test('config API returns bare ids, not composites', () => {",
                   "  rows.forEach((s) => pm.expect(s.id, 'service id').to.not.include(':'));",
                   "});",
-                  "if (rows.length && !pm.collectionVariables.get('serviceId')) {",
+                  "if (rows.length && !pm.variables.get('serviceId')) {",
                   "  pm.collectionVariables.set('serviceId', rows[0].id);",
                   "  console.log('serviceId -> ' + rows[0].id);",
                   "}"
@@ -350,7 +350,7 @@
                   "    const sum = b.topRoutes.reduce((acc, r) => acc + r.requests, 0);",
                   "    pm.expect(sum, 'sum of topRoutes').to.be.at.most(b.summary.requests);",
                   "  });",
-                  "  console.log(b.topRoutes.map((r) => '  ' + (r.name || '(deleted ' + r.id + ')') + '  ' + r.requests + ' req  ' + r.errorRatePercent + '% err').join('\n'));",
+                  "  b.topRoutes.forEach((r) => console.log('  ' + (r.name || '(deleted ' + r.id + ')') + '  ' + r.requests + ' req  ' + r.errorRatePercent + '% err'));",
                   "  const gone = b.topRoutes.filter((r) => r.deleted);",
                   "  if (gone.length) console.warn(gone.length + ' route(s) have traffic but no longer exist in config (deleted inside the 14 day window).');",
                   "}"
@@ -466,10 +466,10 @@
                   "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
                   "const b = pm.response.json();",
                   "pm.test('name resolved to a control plane', () => {",
-                  "  pm.expect(b.controlPlane.name).to.eql(pm.collectionVariables.get('controlPlaneName'));",
+                  "  pm.expect(b.controlPlane.name).to.eql(pm.variables.get('controlPlaneName'));",
                   "  pm.expect(b.controlPlane.id).to.be.a('string');",
                   "});",
-                  "if (!pm.collectionVariables.get('controlPlaneId')) {",
+                  "if (!pm.variables.get('controlPlaneId')) {",
                   "  pm.collectionVariables.set('controlPlaneId', b.controlPlane.id);",
                   "  console.log('controlPlaneId -> ' + b.controlPlane.id);",
                   "}"
@@ -515,7 +515,7 @@
                   "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
                   "const b = pm.response.json();",
                   "pm.test('path parameter selected the control plane', () => {",
-                  "  pm.expect(b.controlPlane.id).to.eql(pm.collectionVariables.get('controlPlaneId'));",
+                  "  pm.expect(b.controlPlane.id).to.eql(pm.variables.get('controlPlaneId'));",
                   "});"
                 ]
               }
@@ -572,7 +572,7 @@
                   "",
                   "pm.test('control_plane filter was applied', () => {",
                   "  const f = b.filters.find((x) => x.field === 'control_plane');",
-                  "  pm.expect(f.value).to.deep.equal([pm.collectionVariables.get('controlPlaneId')]);",
+                  "  pm.expect(f.value).to.deep.equal([pm.variables.get('controlPlaneId')]);",
                   "});",
                   "",
                   "pm.test('time series covers the window', () => pm.expect(b.timeSeries.length).to.be.above(0));",
@@ -598,11 +598,11 @@
                   "      pm.expect(e.compositeId, 'composite id').to.include(':');",
                   "    });",
                   "  });",
-                  "  if (b.topRoutes.length && !pm.collectionVariables.get('routeId')) {",
+                  "  if (b.topRoutes.length && !pm.variables.get('routeId')) {",
                   "    pm.collectionVariables.set('routeId', b.topRoutes[0].id);",
                   "    console.log('routeId -> ' + b.topRoutes[0].id);",
                   "  }",
-                  "  if (b.topServices.length && !pm.collectionVariables.get('serviceId')) {",
+                  "  if (b.topServices.length && !pm.variables.get('serviceId')) {",
                   "    pm.collectionVariables.set('serviceId', b.topServices[0].id);",
                   "  }",
                   "}"
@@ -742,11 +742,11 @@
                   "    }",
                   "  });",
                   "  pm.test('control_plane_id derived from the composite', () => {",
-                  "    pm.expect(r.control_plane_id).to.eql(pm.collectionVariables.get('controlPlaneId'));",
+                  "    pm.expect(r.control_plane_id).to.eql(pm.variables.get('controlPlaneId'));",
                   "  });",
                   "  pm.test('fields the roll-up depends on are present', () => {",
                   "    pm.expect(r, 'request_start').to.have.property('request_start');",
-                  "    pm.expect(r, 'status_code').to.have.property('status_code');",
+                  "    pm.expect(r, 'response_http_status').to.have.property('response_http_status');",
                   "    pm.expect(r, 'latencies_response_ms').to.have.property('latencies_response_ms');",
                   "  });",
                   "}"
@@ -793,7 +793,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.collectionVariables.get('serviceId')) {",
+                  "if (!pm.variables.get('serviceId')) {",
                   "  console.warn('serviceId is empty - run 00. Setup first, or set it by hand.');",
                   "}"
                 ]
@@ -807,11 +807,11 @@
                   "pm.test('status 200', () => pm.response.to.have.status(200));",
                   "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
                   "const b = pm.response.json();",
-                  "const bare = pm.collectionVariables.get('serviceId');",
+                  "const bare = pm.variables.get('serviceId');",
                   "pm.test('bare id was composed into {control_plane_id}:{entity_id}', () => {",
                   "  const f = b.filters.find((x) => x.field === 'gateway_service');",
                   "  pm.expect(f, 'gateway_service filter').to.not.eql(undefined);",
-                  "  pm.expect(f.value[0]).to.eql(pm.collectionVariables.get('controlPlaneId') + ':' + bare);",
+                  "  pm.expect(f.value[0]).to.eql(pm.variables.get('controlPlaneId') + ':' + bare);",
                   "});",
                   "console.log('service ' + bare + ': ' + b.totals.requests + ' requests, ' + b.totals.errorRatePercent + '% errors, p95 ' + b.latencyMs.p95 + 'ms');"
                 ]
@@ -865,7 +865,7 @@
                   "  pm.expect(f.operator).to.eql('in');",
                   "  pm.expect(f.value[0]).to.include(':');",
                   "});",
-                  "console.log('route ' + pm.collectionVariables.get('routeId') + ': ' + b.totals.requests + ' requests, p99 ' + b.latencyMs.p99 + 'ms');"
+                  "console.log('route ' + pm.variables.get('routeId') + ': ' + b.totals.requests + ' requests, p99 ' + b.latencyMs.p99 + 'ms');"
                 ]
               }
             }
@@ -1002,8 +1002,8 @@
                   "// The profile and region guards run before any request validation, so",
                   "// these checks need both present. Placeholders are fine: with a region",
                   "// set the wrapper resolves the base URL without ever loading the profile.",
-                  "pm.variables.set('guardProfileId', pm.collectionVariables.get('profileId') || 'validation-placeholder');",
-                  "pm.variables.set('guardControlPlaneId', pm.collectionVariables.get('controlPlaneId') || '00000000-0000-0000-0000-000000000000');"
+                  "pm.variables.set('guardProfileId', pm.variables.get('profileId') || 'validation-placeholder');",
+                  "pm.variables.set('guardControlPlaneId', pm.variables.get('controlPlaneId') || '00000000-0000-0000-0000-000000000000');"
                 ]
               }
             },
@@ -1063,8 +1063,8 @@
                   "// The profile and region guards run before any request validation, so",
                   "// these checks need both present. Placeholders are fine: with a region",
                   "// set the wrapper resolves the base URL without ever loading the profile.",
-                  "pm.variables.set('guardProfileId', pm.collectionVariables.get('profileId') || 'validation-placeholder');",
-                  "pm.variables.set('guardControlPlaneId', pm.collectionVariables.get('controlPlaneId') || '00000000-0000-0000-0000-000000000000');",
+                  "pm.variables.set('guardProfileId', pm.variables.get('profileId') || 'validation-placeholder');",
+                  "pm.variables.set('guardControlPlaneId', pm.variables.get('controlPlaneId') || '00000000-0000-0000-0000-000000000000');",
                   "pm.collectionVariables.set('staleStart', new Date(Date.now() - 30 * 86400000).toISOString());",
                   "pm.collectionVariables.set('staleEnd', new Date(Date.now() - 29 * 86400000).toISOString());"
                 ]
@@ -1126,8 +1126,8 @@
                   "// The profile and region guards run before any request validation, so",
                   "// these checks need both present. Placeholders are fine: with a region",
                   "// set the wrapper resolves the base URL without ever loading the profile.",
-                  "pm.variables.set('guardProfileId', pm.collectionVariables.get('profileId') || 'validation-placeholder');",
-                  "pm.variables.set('guardControlPlaneId', pm.collectionVariables.get('controlPlaneId') || '00000000-0000-0000-0000-000000000000');"
+                  "pm.variables.set('guardProfileId', pm.variables.get('profileId') || 'validation-placeholder');",
+                  "pm.variables.set('guardControlPlaneId', pm.variables.get('controlPlaneId') || '00000000-0000-0000-0000-000000000000');"
                 ]
               }
             },
@@ -1186,7 +1186,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "// include is validated before the profile lookup, so a placeholder works.",
-                  "pm.variables.set('guardProfileId', pm.collectionVariables.get('profileId') || 'validation-placeholder');"
+                  "pm.variables.set('guardProfileId', pm.variables.get('profileId') || 'validation-placeholder');"
                 ]
               }
             },
