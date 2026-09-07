@@ -522,6 +522,19 @@ function normalizeRecord(record: UnknownRecord): UnknownRecord {
   return normalized;
 }
 
+// Konnect names the status field differently depending on which side you are
+// on: you filter on `status_code`, but a returned record carries the value in
+// `response_http_status`, as a string. Reading `status_code` off a record finds
+// nothing, and because a missing status simply is not counted, the error rate
+// silently reads 0% instead of failing. Verified live 2026-09-08.
+function getRecordStatusCode(record: UnknownRecord): number | undefined {
+  return (
+    getNumberValue(record.response_http_status) ??
+    getNumberValue(record.status_code) ??
+    getNumberValue(record.upstream_status)
+  );
+}
+
 function createBucket(): Bucket {
   return { requests: 0, errors: 0, clientErrors: 0, serverErrors: 0, latencies: [] };
 }
@@ -630,7 +643,7 @@ function buildTimeSeries(records: UnknownRecord[], window: ResolvedWindow): Unkn
 
     const key = Math.floor(timestamp / window.bucketMs) * window.bucketMs;
     const bucket = buckets.get(key) ?? createBucket();
-    addToBucket(bucket, getNumberValue(record.status_code), getNumberValue(record.latencies_response_ms));
+    addToBucket(bucket, getRecordStatusCode(record), getNumberValue(record.latencies_response_ms));
     buckets.set(key, bucket);
   }
 
@@ -660,7 +673,7 @@ function aggregate(records: UnknownRecord[], window: ResolvedWindow, topN: numbe
   ];
 
   for (const record of records) {
-    const statusCode = getNumberValue(record.status_code);
+    const statusCode = getRecordStatusCode(record);
     const latency = getNumberValue(record.latencies_response_ms);
 
     addToBucket(overall, statusCode, latency);

@@ -134,6 +134,11 @@ Three Konnect behaviours are worth knowing before reading the numbers:
   config API returns bare ids. Filtering by a bare id matches nothing and does
   not error. The wrapper composes ids on the way in and splits them on the way
   out, so callers only handle bare ids.
+- **The status field has two different names.** You filter on `status_code`, but
+  a returned record carries the value in `response_http_status`, as a string.
+  Reading `status_code` off a record finds nothing, and since a missing status is
+  simply not counted, the error rate reads 0% rather than failing. Both names are
+  handled.
 - **Retention is 14 days**, and an older window returns an empty result set
   rather than an error. The wrapper rejects it with a 400 instead.
 - **Ingestion lags roughly 50 seconds.** An empty 15M window does not mean the
