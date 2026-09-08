@@ -2,7 +2,7 @@
   "info": {
     "name": "Kong Wrapper - Analytics & Monitoring",
     "_postman_id": "b7c1a4e2-9f3d-4c68-8a51-2d6f0e4b7c93",
-    "description": "Konnect monitoring and analytics through the kong-wrapper service.\n\n## Before you run\n\nSet these collection variables:\n\n- `baseUrl` - `http://localhost:3000` for local, or `https://forgesphere.probestack.io/kong-wrapper` for the deployed service.\n- `patToken` - a Konnect Personal Access Token (`kpat_...`). Only needed by `Verify and store Konnect PAT`; skip it if a profile already exists, and pick one from `List Konnect profiles` instead.\n- `region` - `us` or `in`, and only for the `00. Setup` folder. The analytics routes do not take a region: the profile stores its own admin URL, so the wrapper reads it from there.\n\nThen run the collection in order. `00. Setup` stores the PAT against a generated `profileId` and captures a `controlPlaneId` and `serviceId`; everything after it reuses them.\n\n## Start with the Dashboard request\n\n`GET /analytics/dashboard` is the one a frontend should call. **`profileId` is its only required parameter.** The wrapper resolves the control plane, infers the region, defaults the window to 24H, then fetches the analytics query, the services list, the routes list and data plane health in parallel and returns them as one response - with route and service **names** already joined in, so nothing is left for the client to look up.\n\nThe requests under it are the underlying, Konnect-shaped endpoints. They are still useful for drill-down and for scoping a roll-up to a single entity, but a screen should not have to assemble itself out of them.\n\n## Reading the results\n\nTests assert the things that can silently go wrong, not just status codes:\n\n- Entity ids must come back bare, with the `{control_plane_id}:{entity_id}` composite kept alongside. Filtering Konnect by a bare id matches nothing and does not error.\n- `time series sums to totals` fails precisely when Konnect renames `request_start`.\n- `status codes were parsed` fails when the status field moves. It reads `response_http_status` (a string), while the *filter* field is `status_code` - Konnect uses different names on each side, and getting it wrong reports a 0% error rate rather than failing.\n- On the dashboard, `names resolved` fails if the services or routes lookup did not land, which is the difference between a genuinely unnamed entity and a broken join.\n\nAn empty result is not a failure. Konnect retains 14 days, lags roughly 50 seconds behind live traffic, and the control plane may simply be idle. The console logs the record count and, in `Raw requests`, the field names of the first record, so you can tell the two apart.\n\nEntities deleted inside the retention window still have traffic. Their rows are kept and flagged `deleted: true` with a null name, so the tables still reconcile with the totals.",
+    "description": "Konnect monitoring and analytics through the kong-wrapper service.\n\n## Before you run\n\nSet one collection variable:\n\n- `baseUrl` - `http://localhost:3000` for local, or `https://forgesphere.probestack.io/kong-wrapper` for the deployed service.\n\nThat is enough. Run the collection top to bottom and `00. Setup` works the rest out: it picks the first stored profile, derives that profile's region from its admin URL, and captures a control plane, its name, and a gateway service for the requests that follow.\n\nOverride any of it by setting `profileId`, `controlPlaneId`, `controlPlaneName` or `serviceId` by hand - anything already set is left alone.\n\nDo **not** set a region. It is derived into `profileRegion` from the chosen profile. A region that disagrees with the profile makes Konnect answer with an empty control plane list and a 200, which looks like an empty org rather than a mistake, and then every request after it fails on a blank id.\n\n`patToken` is only needed on a fresh install with no stored profile. `Verify and store Konnect PAT` skips itself when a profile is already selected, and that request is the one that writes a PAT, in plain text, into the `kong_config` collection.\n\nRequests that need a captured id skip themselves with a reason when it is missing, rather than sending a blank id and returning a 404 that reads like a broken endpoint.\n\n## Start with the Dashboard request\n\n`GET /analytics/dashboard` is the one a frontend should call. **`profileId` is its only required parameter.** The wrapper resolves the control plane, infers the region, defaults the window to 24H, then fetches the analytics query, the services list, the routes list and data plane health in parallel and returns them as one response - with route and service **names** already joined in, so nothing is left for the client to look up.\n\nThe requests under it are the underlying, Konnect-shaped endpoints. They are still useful for drill-down and for scoping a roll-up to a single entity, but a screen should not have to assemble itself out of them.\n\n## Reading the results\n\nTests assert the things that can silently go wrong, not just status codes:\n\n- Entity ids must come back bare, with the `{control_plane_id}:{entity_id}` composite kept alongside. Filtering Konnect by a bare id matches nothing and does not error.\n- `time series sums to totals` fails precisely when Konnect renames `request_start`.\n- `status codes were parsed` fails when the status field moves. It reads `response_http_status` (a string), while the *filter* field is `status_code` - Konnect uses different names on each side, and getting it wrong reports a 0% error rate rather than failing.\n- On the dashboard, `names resolved` fails if the services or routes lookup did not land, which is the difference between a genuinely unnamed entity and a broken join.\n\nAn empty result is not a failure. Konnect retains 14 days, lags roughly 50 seconds behind live traffic, and the control plane may simply be idle. The console logs the record count and, in `Raw requests`, the field names of the first record, so you can tell the two apart.\n\nEntities deleted inside the retention window still have traffic. Their rows are kept and flagged `deleted: true` with a null name, so the tables still reconcile with the totals.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -13,7 +13,7 @@
     },
     {
       "key": "region",
-      "value": "us",
+      "value": "",
       "type": "string"
     },
     {
@@ -60,6 +60,11 @@
       "key": "controlPlaneName",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "profileRegion",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -100,6 +105,58 @@
           }
         },
         {
+          "name": "List Konnect profiles",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data || [];",
+                  "pm.test('PATs are never returned', () => pm.expect(pm.response.text()).to.not.include('kpat_'));",
+                  "rows.forEach((r) => console.log(r.profileId + '  ' + (r.profileName || '') + '  ' + r.adminUrl));",
+                  "",
+                  "if (rows.length === 0) {",
+                  "  console.warn('No stored profiles. Set patToken and run Verify and store Konnect PAT to create one.');",
+                  "  return;",
+                  "}",
+                  "",
+                  "if (!pm.variables.get('profileId')) {",
+                  "  pm.collectionVariables.set('profileId', rows[0].profileId);",
+                  "  console.log('profileId -> ' + rows[0].profileId + ' (' + (rows[0].profileName || 'unnamed') + '). Set it by hand to use a different profile.');",
+                  "}",
+                  "",
+                  "// The setup calls below need a region, and it has to be the one this",
+                  "// profile's PAT belongs to. Asking the user for it invites a mismatch:",
+                  "// the wrong region answers 200 with an empty control plane list, which",
+                  "// looks like an empty org rather than a mistake. Derive it instead.",
+                  "const chosen = rows.find((r) => r.profileId === pm.variables.get('profileId')) || rows[0];",
+                  "const region = (chosen.adminUrl || '').indexOf('//us.') > -1 ? 'us' : 'in';",
+                  "pm.collectionVariables.set('profileRegion', region);",
+                  "console.log('profileRegion -> ' + region + ' (from ' + chosen.adminUrl + ')');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/config/konnect/profiles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "config",
+                "konnect",
+                "profiles"
+              ]
+            },
+            "description": "Lists stored profiles without their tokens. Use this to pick a `profileId` if one was already stored by someone else."
+          }
+        },
+        {
           "name": "Verify and store Konnect PAT",
           "event": [
             {
@@ -107,8 +164,17 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "// Only needed on a fresh install. If a profile is already selected there is",
+                  "// nothing to store, so skip rather than sending a request that must fail.",
                   "if (!pm.variables.get('patToken')) {",
-                  "  throw new Error('Set the patToken collection variable to a Konnect PAT (kpat_...) before running this request.');",
+                  "  if (pm.variables.get('profileId')) {",
+                  "    console.log('Skipped: profileId is already set, so no PAT needs storing.');",
+                  "    if (pm.execution && typeof pm.execution.skipRequest === 'function') {",
+                  "      pm.execution.skipRequest();",
+                  "    }",
+                  "  } else {",
+                  "    throw new Error('Set patToken to a Konnect PAT (kpat_...), or set profileId to an existing profile from List Konnect profiles.');",
+                  "  }",
                   "}"
                 ]
               }
@@ -118,22 +184,27 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Konnect accepted the PAT', () => pm.response.to.have.status(200));",
-                  "if (pm.response.code !== 200) {",
-                  "  console.error(pm.response.text());",
-                  "  return;",
-                  "}",
-                  "const body = pm.response.json();",
-                  "pm.test('PAT verified and stored', () => {",
-                  "  pm.expect(body.valid, 'valid').to.eql(true);",
-                  "  pm.expect(body.stored, 'stored').to.eql(true);",
-                  "});",
-                  "pm.test('response does not echo the token back', () => {",
-                  "  pm.expect(pm.response.text()).to.not.include('kpat_');",
-                  "});",
-                  "if (body.profileId) {",
-                  "  pm.collectionVariables.set('profileId', body.profileId);",
-                  "  console.log('profileId ->', body.profileId);",
+                  "const skipped = !pm.variables.get('patToken') && pm.variables.get('profileId');",
+                  "if (skipped) {",
+                  "  console.log('Nothing to verify - using the profileId already set.');",
+                  "} else {",
+                  "  pm.test('Konnect accepted the PAT', () => pm.response.to.have.status(200));",
+                  "  if (pm.response.code === 200) {",
+                  "    const body = pm.response.json();",
+                  "    pm.test('PAT verified and stored', () => {",
+                  "      pm.expect(body.valid, 'valid').to.eql(true);",
+                  "      pm.expect(body.stored, 'stored').to.eql(true);",
+                  "    });",
+                  "    pm.test('response does not echo the token back', () => {",
+                  "      pm.expect(pm.response.text()).to.not.include('kpat_');",
+                  "    });",
+                  "    if (body.profileId) {",
+                  "      pm.collectionVariables.set('profileId', body.profileId);",
+                  "      console.log('profileId -> ' + body.profileId);",
+                  "    }",
+                  "  } else {",
+                  "    console.error(pm.response.text());",
+                  "  }",
                   "}"
                 ]
               }
@@ -166,40 +237,6 @@
           }
         },
         {
-          "name": "List Konnect profiles",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status 200', () => pm.response.to.have.status(200));",
-                  "const rows = pm.response.json().data || [];",
-                  "pm.test('the stored profile is listed', () => pm.expect(rows.length).to.be.above(0));",
-                  "pm.test('PATs are never returned', () => pm.expect(pm.response.text()).to.not.include('kpat_'));",
-                  "console.log(rows.map((r) => r.profileId + '  ' + (r.profileName || '') + '  ' + r.adminUrl).join('\\n'));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/config/konnect/profiles",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "config",
-                "konnect",
-                "profiles"
-              ]
-            },
-            "description": "Lists stored profiles without their tokens. Use this to pick a `profileId` if one was already stored by someone else."
-          }
-        },
-        {
           "name": "List control planes (captures controlPlaneId)",
           "event": [
             {
@@ -210,11 +247,18 @@
                   "pm.test('status 200', () => pm.response.to.have.status(200));",
                   "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
                   "const rows = pm.response.json().data || [];",
-                  "pm.test('at least one control plane in this region', () => pm.expect(rows.length).to.be.above(0));",
-                  "console.log(rows.map((c) => c.id + '  ' + c.name).join('\\n'));",
-                  "if (rows.length && !pm.variables.get('controlPlaneId')) {",
+                  "pm.test('at least one control plane on this profile', () => pm.expect(rows.length).to.be.above(0));",
+                  "rows.forEach((cp) => console.log(cp.id + '  ' + cp.name));",
+                  "if (rows.length === 0) { return; }",
+                  "",
+                  "if (!pm.variables.get('controlPlaneId')) {",
                   "  pm.collectionVariables.set('controlPlaneId', rows[0].id);",
-                  "  console.log('controlPlaneId -> ' + rows[0].id + ' (' + rows[0].name + '). Set it by hand to target a different control plane.');",
+                  "  console.log('controlPlaneId -> ' + rows[0].id + ' (' + rows[0].name + ')');",
+                  "}",
+                  "const chosen = rows.find((cp) => cp.id === pm.variables.get('controlPlaneId')) || rows[0];",
+                  "if (!pm.variables.get('controlPlaneName')) {",
+                  "  pm.collectionVariables.set('controlPlaneName', chosen.name);",
+                  "  console.log('controlPlaneName -> ' + chosen.name);",
                   "}"
                 ]
               }
@@ -224,7 +268,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/v2/control-planes?region={{region}}&profileId={{profileId}}",
+              "raw": "{{baseUrl}}/v2/control-planes?region={{profileRegion}}&profileId={{profileId}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -235,7 +279,7 @@
               "query": [
                 {
                   "key": "region",
-                  "value": "{{region}}"
+                  "value": "{{profileRegion}}"
                 },
                 {
                   "key": "profileId",
@@ -249,6 +293,22 @@
         {
           "name": "List gateway services (captures serviceId and routeId)",
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A blank id here would build a //double-slash URL and 404, which reads",
+                  "// as a broken endpoint instead of a skipped prerequisite.",
+                  "if (!pm.variables.get('controlPlaneId')) {",
+                  "  console.warn('Skipped: controlPlaneId is not set. Run List control planes first.');",
+                  "  if (pm.execution && typeof pm.execution.skipRequest === 'function') {",
+                  "    pm.execution.skipRequest();",
+                  "  }",
+                  "}"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
@@ -273,7 +333,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/v2/control-planes/{{controlPlaneId}}/core-entities/services?region={{region}}&profileId={{profileId}}",
+              "raw": "{{baseUrl}}/v2/control-planes/{{controlPlaneId}}/core-entities/services?region={{profileRegion}}&profileId={{profileId}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -287,7 +347,7 @@
               "query": [
                 {
                   "key": "region",
-                  "value": "{{region}}"
+                  "value": "{{profileRegion}}"
                 },
                 {
                   "key": "profileId",
@@ -458,21 +518,36 @@
           "name": "Dashboard - control plane by name",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A blank id here would build a //double-slash URL and 404, which reads",
+                  "// as a broken endpoint instead of a skipped prerequisite.",
+                  "if (!pm.variables.get('controlPlaneName')) {",
+                  "  console.warn('Skipped: controlPlaneName is not set. Run List control planes first.');",
+                  "  if (pm.execution && typeof pm.execution.skipRequest === 'function') {",
+                  "    pm.execution.skipRequest();",
+                  "  }",
+                  "}"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "pm.test('a control plane name is available to ask for', () => {",
+                  "  pm.expect(pm.variables.get('controlPlaneName'), 'controlPlaneName').to.not.eql('');",
+                  "});",
                   "pm.test('status 200', () => pm.response.to.have.status(200));",
                   "if (pm.response.code !== 200) { console.error(pm.response.text()); return; }",
                   "const b = pm.response.json();",
-                  "pm.test('name resolved to a control plane', () => {",
+                  "pm.test('the name resolved to that control plane', () => {",
                   "  pm.expect(b.controlPlane.name).to.eql(pm.variables.get('controlPlaneName'));",
                   "  pm.expect(b.controlPlane.id).to.be.a('string');",
-                  "});",
-                  "if (!pm.variables.get('controlPlaneId')) {",
-                  "  pm.collectionVariables.set('controlPlaneId', b.controlPlane.id);",
-                  "  console.log('controlPlaneId -> ' + b.controlPlane.id);",
-                  "}"
+                  "});"
                 ]
               }
             }
@@ -506,6 +581,22 @@
         {
           "name": "Dashboard - control plane in the path",
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A blank id here would build a //double-slash URL and 404, which reads",
+                  "// as a broken endpoint instead of a skipped prerequisite.",
+                  "if (!pm.variables.get('controlPlaneId')) {",
+                  "  console.warn('Skipped: controlPlaneId is not set. Run 00. Setup first.');",
+                  "  if (pm.execution && typeof pm.execution.skipRequest === 'function') {",
+                  "    pm.execution.skipRequest();",
+                  "  }",
+                  "}"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
@@ -793,8 +884,13 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "// A blank id here would build a //double-slash URL and 404, which reads",
+                  "// as a broken endpoint instead of a skipped prerequisite.",
                   "if (!pm.variables.get('serviceId')) {",
-                  "  console.warn('serviceId is empty - run 00. Setup first, or set it by hand.');",
+                  "  console.warn('Skipped: serviceId is not set. Run List gateway services first, or set it by hand.');",
+                  "  if (pm.execution && typeof pm.execution.skipRequest === 'function') {",
+                  "    pm.execution.skipRequest();",
+                  "  }",
                   "}"
                 ]
               }
@@ -853,6 +949,22 @@
           "name": "Summary for one route",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A blank id here would build a //double-slash URL and 404, which reads",
+                  "// as a broken endpoint instead of a skipped prerequisite.",
+                  "if (!pm.variables.get('routeId')) {",
+                  "  console.warn('Skipped: routeId is not set. Run Summary first so a route id can be captured.');",
+                  "  if (pm.execution && typeof pm.execution.skipRequest === 'function') {",
+                  "    pm.execution.skipRequest();",
+                  "  }",
+                  "}"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
@@ -904,6 +1016,22 @@
         {
           "name": "Control plane health",
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A blank id here would build a //double-slash URL and 404, which reads",
+                  "// as a broken endpoint instead of a skipped prerequisite.",
+                  "if (!pm.variables.get('controlPlaneId')) {",
+                  "  console.warn('Skipped: controlPlaneId is not set. Run 00. Setup first.');",
+                  "  if (pm.execution && typeof pm.execution.skipRequest === 'function') {",
+                  "    pm.execution.skipRequest();",
+                  "  }",
+                  "}"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
